@@ -15,4 +15,3 @@
 - **App version** — `0.1.0+1` is valid.
 - **Android permissions** — No high-sensitivity permissions detected.
 - **Basic security scan** — No insecure HTTP endpoint or obvious hard-coded secret detected.
-
