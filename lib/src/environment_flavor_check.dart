@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 
 /// Detects risky multi-environment / flavor configuration mistakes.
@@ -195,31 +196,34 @@ class EnvironmentFlavorCheck {
     if (!await libDir.exists()) return;
 
     final offenders = <String>[];
+    String? evidenceFile;
+    int? evidenceLine;
     await for (final entity
         in libDir.list(recursive: true, followLinks: false)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final relative = entity.path
-          .substring(project.path.length)
-          .replaceFirst(RegExp(r'^[/\\]'), '');
+      final relative = Evidence.relativePath(project, entity);
       if (_isApprovedConfigPath(relative)) continue;
       final text = await entity.readAsString();
       final seen = <String>{};
 
+      void consider(String url, int offset) {
+        if (_isLocalUrl(url) || _isApprovedHost(url)) return;
+        final line = Evidence.lineOfOffset(text, offset);
+        final display = '$relative:$line → ${_safeUrl(url)}';
+        if (!seen.add(display)) return;
+        offenders.add(display);
+        evidenceFile ??= relative;
+        evidenceLine ??= line;
+      }
+
       for (final match in _dartApiAssignment.allMatches(text)) {
-        final url = match.group(1)!;
-        if (_isLocalUrl(url)) continue;
-        if (_isApprovedHost(url)) continue;
-        final label = '$relative → ${_safeUrl(url)}';
-        if (seen.add(label)) offenders.add(label);
+        consider(match.group(1)!, match.start);
       }
 
       for (final match in _hardCodedUrl.allMatches(text)) {
         final url = match.group(0)!;
-        if (_isLocalUrl(url)) continue;
-        if (_isApprovedHost(url)) continue;
         if (!_looksLikeApiUrl(url)) continue;
-        final label = '$relative → ${_safeUrl(url)}';
-        if (seen.add(label)) offenders.add(label);
+        consider(url, match.start);
       }
     }
 
@@ -230,6 +234,8 @@ class EnvironmentFlavorCheck {
         'Hard-coded API URL',
         'Non-local API URL(s) found in Dart source outside approved environment/config files: ${offenders.take(5).join('; ')}${offenders.length > 5 ? '…' : ''}.',
         id: 'hard-coded-api-url',
+        file: evidenceFile,
+        line: evidenceLine,
         fix:
             'Move API base URLs into `.env*` or a dedicated environment config loaded per flavor.',
       ),

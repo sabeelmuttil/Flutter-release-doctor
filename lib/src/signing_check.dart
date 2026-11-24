@@ -116,10 +116,10 @@ class SigningCheck {
             Finding(
               FindingLevel.warning,
               'Android key.properties gitignore',
-              '`${_relative(project, keyProps)}` exists but is not ignored by `.gitignore`.',
+              '`${_relative(project, keyProps)}` exists but is not ignored by `.gitignore`. Verify with `git check-ignore -v ${_relative(project, keyProps)}`.',
               id: 'android-key-properties-gitignore',
               fix:
-                  'Add `key.properties` (or the exact path) to `.gitignore` so signing secrets are never committed.',
+                  'Add `key.properties` (or the exact path) to `.gitignore` so signing secrets are never committed. Release Doctor does not modify the scanned project’s `.gitignore`.',
             ),
           );
         }

@@ -6,6 +6,7 @@ import 'package:flutter_release_doctor/src/cicd_check.dart';
 import 'package:flutter_release_doctor/src/deep_link_push_check.dart';
 import 'package:flutter_release_doctor/src/doctor_config.dart';
 import 'package:flutter_release_doctor/src/environment_flavor_check.dart';
+import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
 import 'package:flutter_release_doctor/src/signing_check.dart';
@@ -53,6 +54,10 @@ class DoctorReport {
       buffer.writeln(
         '[$icon] [${finding.id}] ${finding.title}: ${finding.detail}',
       );
+      final evidence = finding.evidenceLabel;
+      if (evidence != null) {
+        buffer.writeln('       At: $evidence');
+      }
       if (finding.fix != null) buffer.writeln('       Fix: ${finding.fix}');
     }
     return buffer.toString().trimRight();
@@ -70,6 +75,8 @@ class DoctorReport {
         buffer.writeln(
           '- **${finding.title}** (`${finding.id}`) — ${finding.detail}',
         );
+        final evidence = finding.evidenceLabel;
+        if (evidence != null) buffer.writeln('  - At: `$evidence`');
         if (finding.fix != null) buffer.writeln('  - Fix: ${finding.fix}');
       }
       buffer.writeln();
@@ -339,6 +346,10 @@ class ReleaseDoctor {
       "http://[^\\s'\"<>]+",
       caseSensitive: false,
     );
+    final secretPattern = RegExp(
+      r'''(?:api[_-]?key|secret|password)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}''',
+      caseSensitive: false,
+    );
     final candidates = <File>[];
     await for (final entity in project.list(
       recursive: true,
@@ -346,12 +357,11 @@ class ReleaseDoctor {
     )) {
       if (entity is! File) continue;
       final path = entity.path;
-      if (path.contains(
-            '${Platform.pathSeparator}.git${Platform.pathSeparator}',
-          ) ||
-          path.contains(
-            '${Platform.pathSeparator}build${Platform.pathSeparator}',
-          )) {
+      final normalized = path.replaceAll('\\', '/');
+      if (normalized.contains('/.git/') ||
+          normalized.contains('/build/') ||
+          normalized.contains('/.dart_tool/') ||
+          normalized.contains('/ios/Pods/')) {
         continue;
       }
       if (path.endsWith('.dart') ||
@@ -361,51 +371,69 @@ class ReleaseDoctor {
         candidates.add(entity);
       }
     }
-    var insecureHttp = false;
-    var obviousSecret = false;
+
+    String? httpFile;
+    int? httpLine;
+    String? secretFile;
+    int? secretLine;
+    String? secretClass;
+
     for (final file in candidates) {
       final text = await file.readAsString();
-      for (final match in httpPattern.allMatches(text)) {
-        final url = match.group(0)!;
-        final lower = url.toLowerCase();
-        if (lower.contains('localhost') || lower.contains('10.0.2.2')) {
-          continue;
+      if (httpFile == null) {
+        for (final match in httpPattern.allMatches(text)) {
+          final url = match.group(0)!;
+          final lower = url.toLowerCase();
+          if (lower.contains('localhost') || lower.contains('10.0.2.2')) {
+            continue;
+          }
+          final host = _hostOfUrl(url);
+          if (host != null && approved.contains(host)) continue;
+          httpFile = Evidence.relativePath(project, file);
+          httpLine = Evidence.lineOfOffset(text, match.start);
+          break;
         }
-        final host = _hostOfUrl(url);
-        if (host != null && approved.contains(host)) continue;
-        insecureHttp = true;
-        break;
       }
-      obviousSecret = obviousSecret ||
-          RegExp(
-            r'''(?:api[_-]?key|secret|password)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}''',
-            caseSensitive: false,
-          ).hasMatch(text);
+      if (secretFile == null) {
+        final match = secretPattern.firstMatch(text);
+        if (match != null) {
+          secretFile = Evidence.relativePath(project, file);
+          secretLine = Evidence.lineOfOffset(text, match.start);
+          secretClass = Evidence.classifySecretMatch(match.group(0)!);
+        }
+      }
+      if (httpFile != null && secretFile != null) break;
     }
-    if (insecureHttp) {
+
+    if (httpFile != null) {
       findings.add(
-        const Finding(
+        Finding(
           FindingLevel.warning,
           'Insecure HTTP',
           'A non-local HTTP endpoint was detected.',
           id: 'insecure-http',
+          file: httpFile,
+          line: httpLine,
           fix: 'Use HTTPS for production endpoints.',
         ),
       );
     }
-    if (obviousSecret) {
+    if (secretFile != null) {
       findings.add(
-        const Finding(
+        Finding(
           FindingLevel.warning,
           'Possible hard-coded secret',
-          'A long API key, secret, or password-like value was detected.',
+          'A credential-like assignment was detected. The value is redacted.',
           id: 'hard-coded-secret',
+          file: secretFile,
+          line: secretLine,
+          classification: secretClass,
           fix:
               'Review it; rotate real secrets and move them to secure server-side configuration.',
         ),
       );
     }
-    if (!insecureHttp && !obviousSecret) {
+    if (httpFile == null && secretFile == null) {
       findings.add(
         const Finding(
           FindingLevel.passed,

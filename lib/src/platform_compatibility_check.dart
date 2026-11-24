@@ -317,20 +317,38 @@ class PlatformCompatibilityCheck {
     Directory project,
     List<Finding> findings,
   ) async {
-    final manifest = await _findPrivacyManifest(project);
-    if (manifest != null) {
+    final appOwned = await _findAppOwnedPrivacyManifest(project);
+    if (appOwned != null) {
       findings.add(
         Finding(
           FindingLevel.passed,
           'iOS privacy manifest',
-          'Found `${_relative(project, manifest)}`. Contents were not validated for full App Store compliance.',
+          'Found `${_relative(project, appOwned)}`. Contents were not validated for full App Store compliance.',
           id: 'ios-privacy-manifest',
+          file: _relative(project, appOwned),
         ),
       );
       return;
     }
 
+    final podsOnly = await _findPodsPrivacyManifest(project);
     final sensitive = await _hasIosPrivacySensitiveSignals(project);
+
+    if (podsOnly != null) {
+      findings.add(
+        Finding(
+          FindingLevel.warning,
+          'iOS privacy manifest',
+          'Only CocoaPods privacy manifests were found (e.g. `${_relative(project, podsOnly)}`). App-level PrivacyInfo.xcprivacy compliance could not be confirmed.',
+          id: 'ios-privacy-manifest',
+          file: _relative(project, podsOnly),
+          fix:
+              'Add an app-owned PrivacyInfo.xcprivacy under ios/Runner (or include one from the Runner target). Pods manifests alone are not sufficient.',
+        ),
+      );
+      return;
+    }
+
     if (!sensitive) return;
 
     findings.add(
@@ -345,13 +363,46 @@ class PlatformCompatibilityCheck {
     );
   }
 
-  Future<File?> _findPrivacyManifest(Directory project) async {
+  Future<File?> _findAppOwnedPrivacyManifest(Directory project) async {
     final direct = File(_join(project, 'ios/Runner/PrivacyInfo.xcprivacy'));
     if (await direct.exists()) return direct;
+
+    final pbxproj =
+        File(_join(project, 'ios/Runner.xcodeproj/project.pbxproj'));
+    if (await pbxproj.exists()) {
+      final text = await pbxproj.readAsString();
+      for (final match in RegExp(
+        r'([^"\s]+PrivacyInfo\.xcprivacy)',
+      ).allMatches(text)) {
+        final relative = match.group(1)!.replaceAll('\\', '/');
+        if (relative.contains('/Pods/')) continue;
+        final candidates = [
+          File(_join(project, relative)),
+          File(_join(project, 'ios/$relative')),
+          File(_join(project, 'ios/Runner/${relative.split('/').last}')),
+        ];
+        for (final file in candidates) {
+          if (await file.exists()) return file;
+        }
+      }
+    }
 
     final ios = Directory(_join(project, 'ios'));
     if (!await ios.exists()) return null;
     await for (final entity in ios.list(recursive: true, followLinks: false)) {
+      if (entity is! File) continue;
+      final normalized = entity.path.replaceAll('\\', '/');
+      if (!normalized.endsWith('PrivacyInfo.xcprivacy')) continue;
+      if (normalized.contains('/Pods/')) continue;
+      return entity;
+    }
+    return null;
+  }
+
+  Future<File?> _findPodsPrivacyManifest(Directory project) async {
+    final pods = Directory(_join(project, 'ios/Pods'));
+    if (!await pods.exists()) return null;
+    await for (final entity in pods.list(recursive: true, followLinks: false)) {
       if (entity is File &&
           entity.path.replaceAll('\\', '/').endsWith('PrivacyInfo.xcprivacy')) {
         return entity;

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 
 /// Deep link (App Links / Universal Links / URL schemes) and push readiness.
@@ -26,6 +27,7 @@ class DeepLinkPushCheck {
     if (!await manifest.exists()) return;
 
     final text = await manifest.readAsString();
+    final relative = Evidence.relativePath(project, manifest);
     final filters = _androidViewBrowsableFilters(text);
     if (filters.isEmpty) return;
 
@@ -34,42 +36,38 @@ class DeepLinkPushCheck {
     final customSchemes = <String>{};
 
     for (final filter in filters) {
-      final isHttps = filter.data.any(
-        (d) => d.scheme?.toLowerCase() == 'https',
-      );
-      final isCustom = filter.data.any(
-        (d) =>
-            d.scheme != null &&
-            d.scheme!.isNotEmpty &&
-            d.scheme!.toLowerCase() != 'https' &&
-            d.scheme!.toLowerCase() != 'http',
-      );
-
-      if (isHttps) {
-        final hosts = filter.data
-            .where((d) => d.scheme?.toLowerCase() == 'https')
+      // HTTPS App Links only when a data tag explicitly sets scheme="https".
+      final httpsEntries =
+          filter.data.where((d) => d.scheme?.toLowerCase() == 'https').toList();
+      if (httpsEntries.isNotEmpty) {
+        final concreteHosts = httpsEntries
             .map((d) => d.host)
+            .whereType<String>()
+            .where((h) => h.isNotEmpty && !_isPlaceholder(h))
             .toList();
-        final missingHost = hosts.isEmpty ||
-            hosts.any((h) => h == null || h.isEmpty || _isPlaceholder(h));
-        if (missingHost) {
+        final line = Evidence.lineOfOffset(text, filter.start);
+        if (concreteHosts.isEmpty) {
           findings.add(
-            const Finding(
+            Finding(
               FindingLevel.warning,
               'Android App Links host',
               'An HTTPS app-link intent filter has no host or uses an unresolved placeholder.',
               id: 'android-app-links-host',
+              file: relative,
+              line: line,
               fix:
                   'Set a concrete android:host on the HTTPS VIEW/BROWSABLE intent filter.',
             ),
           );
         } else if (!filter.autoVerify) {
           findings.add(
-            const Finding(
+            Finding(
               FindingLevel.warning,
               'Android App Links autoVerify',
               'An HTTPS deep-link intent filter is present but android:autoVerify="true" is missing.',
               id: 'android-app-links-autoverify',
+              file: relative,
+              line: line,
               fix:
                   'Add android:autoVerify="true" for Android App Links verification.',
             ),
@@ -79,37 +77,40 @@ class DeepLinkPushCheck {
         }
       }
 
-      if (isCustom) {
-        for (final data in filter.data) {
-          final scheme = data.scheme;
-          if (scheme == null || scheme.isEmpty) continue;
-          final lower = scheme.toLowerCase();
-          if (lower == 'http' || lower == 'https') continue;
-          if (_isPlaceholder(scheme)) {
-            findings.add(
-              const Finding(
-                FindingLevel.warning,
-                'Android custom URL scheme',
-                'A custom URL scheme intent filter uses an unresolved placeholder.',
-                id: 'android-custom-url-scheme',
-                fix: 'Replace placeholder schemes with a concrete scheme name.',
-              ),
-            );
-            continue;
-          }
-          customSchemes.add(scheme);
-          customSchemePass = true;
+      for (final data in filter.data) {
+        final scheme = data.scheme;
+        if (scheme == null || scheme.isEmpty) continue;
+        final lower = scheme.toLowerCase();
+        if (lower == 'http' || lower == 'https') continue;
+        final line = Evidence.lineOfOffset(text, filter.start);
+        if (_isPlaceholder(scheme) || _looksLikeVariableScheme(scheme)) {
+          findings.add(
+            Finding(
+              FindingLevel.warning,
+              'Android custom URL scheme',
+              'A custom URL scheme intent filter uses an unresolved placeholder.',
+              id: 'android-custom-url-scheme',
+              file: relative,
+              line: line,
+              classification: 'unresolved-scheme',
+              fix: 'Replace placeholder schemes with a concrete scheme name.',
+            ),
+          );
+          continue;
         }
+        customSchemes.add(scheme);
+        customSchemePass = true;
       }
     }
 
     if (httpsPass) {
       findings.add(
-        const Finding(
+        Finding(
           FindingLevel.passed,
           'Android App Links',
           'HTTPS app-link intent filter found with android:autoVerify="true" and a host.',
           id: 'android-app-links',
+          file: relative,
         ),
       );
     }
@@ -121,6 +122,7 @@ class DeepLinkPushCheck {
           'Android custom URL scheme',
           'Custom URL scheme deep link configured: ${customSchemes.join(', ')}.',
           id: 'android-custom-url-scheme',
+          file: relative,
         ),
       );
     }
@@ -133,26 +135,44 @@ class DeepLinkPushCheck {
     final iosDir = Directory(_join(project, 'ios'));
     if (!await iosDir.exists()) return;
 
+    final infoPlistFile = File(_join(project, 'ios/Runner/Info.plist'));
     final schemes = await _iosUrlSchemes(project);
     final entitlementsText = await _readEntitlements(project);
     final associated = _associatedDomains(entitlementsText);
-    final infoPlist = await _readInfoPlist(project);
 
     if (schemes.isNotEmpty) {
       final empty = schemes.where((s) => s.trim().isEmpty).isNotEmpty;
       final nonEmpty = schemes.where((s) => s.trim().isNotEmpty).toList();
+      final unresolved = nonEmpty
+          .where(_looksLikeVariableScheme)
+          .map(_redactScheme)
+          .toSet()
+          .toList();
+      final concrete =
+          nonEmpty.where((s) => !_looksLikeVariableScheme(s)).toList();
       final duplicates = <String>{};
       final seen = <String>{};
-      for (final scheme in nonEmpty) {
+      for (final scheme in concrete) {
         final key = scheme.toLowerCase();
         if (!seen.add(key)) duplicates.add(scheme);
       }
 
-      if (empty || duplicates.isNotEmpty) {
+      String? plistRel;
+      int? plistLine;
+      if (await infoPlistFile.exists()) {
+        plistRel = Evidence.relativePath(project, infoPlistFile);
+        final text = await infoPlistFile.readAsString();
+        final idx = text.indexOf('CFBundleURLSchemes');
+        if (idx >= 0) plistLine = Evidence.lineOfOffset(text, idx);
+      }
+
+      if (empty || duplicates.isNotEmpty || unresolved.isNotEmpty) {
         final parts = <String>[
           if (empty) 'one or more URL schemes are empty',
           if (duplicates.isNotEmpty)
             'duplicated scheme(s): ${duplicates.join(', ')}',
+          if (unresolved.isNotEmpty)
+            'unresolved variable scheme(s): ${unresolved.join(', ')}',
         ];
         findings.add(
           Finding(
@@ -160,8 +180,11 @@ class DeepLinkPushCheck {
             'iOS custom URL scheme',
             'CFBundleURLTypes issue: ${parts.join('; ')}.',
             id: 'ios-custom-url-scheme',
+            file: plistRel,
+            line: plistLine,
+            classification: unresolved.isNotEmpty ? 'unresolved-scheme' : null,
             fix:
-                'Use unique, non-empty URL schemes in Info.plist CFBundleURLTypes.',
+                'Use unique, non-empty, fully resolved URL schemes in Info.plist CFBundleURLTypes.',
           ),
         );
       } else {
@@ -169,8 +192,10 @@ class DeepLinkPushCheck {
           Finding(
             FindingLevel.passed,
             'iOS custom URL scheme',
-            'Custom URL scheme(s) configured: ${nonEmpty.join(', ')}.',
+            'Custom URL scheme(s) configured: ${concrete.join(', ')}.',
             id: 'ios-custom-url-scheme',
+            file: plistRel,
+            line: plistLine,
           ),
         );
       }
@@ -206,27 +231,15 @@ class DeepLinkPushCheck {
           ),
         );
       }
-    } else if (_suggestsUniversalLinks(schemes, entitlementsText, infoPlist)) {
+    } else if (_hasConcreteUniversalLinkEvidence(entitlementsText)) {
       findings.add(
         const Finding(
           FindingLevel.warning,
           'iOS associated domains',
-          'An HTTPS universal-link-style setup appears intended, but associated domains are missing or unresolved.',
+          'Universal Links evidence was found, but no concrete applinks: domain is configured.',
           id: 'ios-associated-domains',
           fix:
               'Add com.apple.developer.associated-domains with at least one applinks: entry in Runner entitlements.',
-        ),
-      );
-    } else if (entitlementsText != null &&
-        entitlementsText.contains('associated-domains') &&
-        applinks.isEmpty) {
-      findings.add(
-        const Finding(
-          FindingLevel.warning,
-          'iOS associated domains',
-          'Associated domains entitlement is present but no applinks: domain was found (missing or unresolved).',
-          id: 'ios-associated-domains',
-          fix: 'Include at least one applinks:example.com entry.',
         ),
       );
     }
@@ -361,7 +374,13 @@ class DeepLinkPushCheck {
           ),
         );
       }
-      filters.add(_IntentFilter(autoVerify: autoVerify, data: data));
+      filters.add(
+        _IntentFilter(
+          autoVerify: autoVerify,
+          data: data,
+          start: match.start,
+        ),
+      );
     }
     return filters;
   }
@@ -442,34 +461,36 @@ class DeepLinkPushCheck {
         .toList();
   }
 
-  Future<String?> _readInfoPlist(Directory project) async {
-    final plist = File(_join(project, 'ios/Runner/Info.plist'));
-    if (!await plist.exists()) return null;
-    return plist.readAsString();
+  /// Concrete Universal Links evidence only — not arbitrary URL schemes.
+  bool _hasConcreteUniversalLinkEvidence(String? entitlements) {
+    if (entitlements == null) return false;
+    if (entitlements.contains('com.apple.developer.associated-domains')) {
+      return true;
+    }
+    if (RegExp(r'applinks:', caseSensitive: false).hasMatch(entitlements)) {
+      return true;
+    }
+    return false;
   }
 
-  bool _suggestsUniversalLinks(
-    List<String> schemes,
-    String? entitlements,
-    String? infoPlist,
-  ) {
-    if (entitlements != null &&
-        entitlements.toLowerCase().contains('associated-domains')) {
-      return true;
+  bool _looksLikeVariableScheme(String scheme) {
+    return scheme.contains(r'$(') ||
+        scheme.contains(r'${') ||
+        _isPlaceholder(scheme);
+  }
+
+  /// Avoid echoing unresolved variable bodies that may include sensitive keys.
+  String _redactScheme(String scheme) {
+    if (scheme.contains('REVERSED_CLIENT_ID') ||
+        scheme.contains('CLIENT_ID') ||
+        scheme.contains('API_KEY')) {
+      return '[unresolved-variable-scheme]';
     }
-    if (entitlements != null &&
-        RegExp(r'applinks:|https://', caseSensitive: false)
-            .hasMatch(entitlements)) {
-      return true;
+    if (_looksLikeVariableScheme(scheme)) {
+      // Keep structural hint without expanding values.
+      return scheme.replaceAll(RegExp(r'\$\([^)]+\)'), r'$(…)');
     }
-    if (infoPlist != null &&
-        RegExp(
-          r'<key>FlutterDeepLinkingEnabled</key>\s*<true\s*/>',
-          caseSensitive: false,
-        ).hasMatch(infoPlist)) {
-      return true;
-    }
-    return schemes.any((s) => s.toLowerCase().startsWith('https'));
+    return scheme;
   }
 
   Future<bool> _detectFirebaseMessaging(Directory project) async {
@@ -565,10 +586,15 @@ class DeepLinkPushCheck {
 }
 
 class _IntentFilter {
-  const _IntentFilter({required this.autoVerify, required this.data});
+  const _IntentFilter({
+    required this.autoVerify,
+    required this.data,
+    required this.start,
+  });
 
   final bool autoVerify;
   final List<_DataTag> data;
+  final int start;
 }
 
 class _DataTag {

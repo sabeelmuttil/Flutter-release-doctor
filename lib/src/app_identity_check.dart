@@ -262,6 +262,18 @@ class AppIdentityCheck {
     }
 
     final text = await pbxproj.readAsString();
+    final runnerValues = _runnerBundleIds(text);
+    if (runnerValues.isNotEmpty) {
+      if (runnerValues.length == 1) {
+        return _ResolvedId.resolved(runnerValues.single);
+      }
+      return _ResolvedId.unresolved(
+        'Could not resolve PRODUCT_BUNDLE_IDENTIFIER for the Runner target: multiple distinct values found (${runnerValues.join(', ')}).',
+      );
+    }
+
+    // Fallback: ignore extension/test targets rather than treating them as
+    // conflicting app identities.
     final matches = RegExp(
       r'PRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);',
     ).allMatches(text);
@@ -269,7 +281,7 @@ class AppIdentityCheck {
     final values = <String>{};
     for (final match in matches) {
       final value = match.group(1)!.trim().replaceAll('"', '');
-      if (value.endsWith('Tests') || value.endsWith('UITests')) continue;
+      if (_isIgnorableBundleTarget(value)) continue;
       if (_looksLikeVariable(value)) continue;
       values.add(value);
     }
@@ -282,11 +294,57 @@ class AppIdentityCheck {
 
     if (values.length > 1) {
       return _ResolvedId.unresolved(
-        'Could not resolve PRODUCT_BUNDLE_IDENTIFIER from project.pbxproj: multiple distinct values found (${values.join(', ')}).',
+        'Could not resolve PRODUCT_BUNDLE_IDENTIFIER from project.pbxproj: multiple distinct Runner values found (${values.join(', ')}).',
       );
     }
 
     return _ResolvedId.resolved(values.single);
+  }
+
+  /// Extracts PRODUCT_BUNDLE_IDENTIFIER values for the Runner native target.
+  Set<String> _runnerBundleIds(String pbxproj) {
+    final listMatch = RegExp(
+      r'Build configuration list for PBXNativeTarget "Runner" \*/\s*=\s*\{\s*isa\s*=\s*XCConfigurationList;\s*buildConfigurations\s*=\s*\(([\s\S]*?)\);',
+      caseSensitive: false,
+    ).firstMatch(pbxproj);
+    if (listMatch == null) return {};
+
+    final configIds = RegExp(r'([A-Za-z0-9]{16,})\s*/\*')
+        .allMatches(listMatch.group(1)!)
+        .map((m) => m.group(1)!)
+        .toSet();
+    if (configIds.isEmpty) return {};
+
+    final values = <String>{};
+    for (final id in configIds) {
+      final block = RegExp(
+        '${RegExp.escape(id)}\\s*/\\*[^*]*\\*/\\s*=\\s*\\{([\\s\\S]*?)\\n\\s*\\};',
+      ).firstMatch(pbxproj);
+      if (block == null) continue;
+      final setting = RegExp(
+        r'PRODUCT_BUNDLE_IDENTIFIER\s*=\s*([^;]+);',
+      ).firstMatch(block.group(1)!);
+      if (setting == null) continue;
+      final value = setting.group(1)!.trim().replaceAll('"', '');
+      if (_looksLikeVariable(value) || _isIgnorableBundleTarget(value)) {
+        continue;
+      }
+      values.add(value);
+    }
+    return values;
+  }
+
+  bool _isIgnorableBundleTarget(String bundleId) {
+    final lower = bundleId.toLowerCase();
+    return lower.endsWith('tests') ||
+        lower.endsWith('uitests') ||
+        lower.contains('notificationextension') ||
+        lower.contains('notificationserviceextension') ||
+        lower.contains('shareextension') ||
+        lower.contains('widgetextension') ||
+        lower.contains('intentextension') ||
+        RegExp(r'\.[a-z0-9]*extension$', caseSensitive: false)
+            .hasMatch(bundleId);
   }
 
   Future<Set<String>> _readAndroidFirebasePackages(File file) async {

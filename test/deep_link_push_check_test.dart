@@ -98,13 +98,14 @@ void main() {
     final project = await _baseProject(tempRoot, 'ios_applinks_missing');
     await _writeIosSkeleton(project);
     await File(
-      '${project.path}${Platform.pathSeparator}ios${Platform.pathSeparator}Runner${Platform.pathSeparator}Info.plist',
+      '${project.path}${Platform.pathSeparator}ios${Platform.pathSeparator}Runner${Platform.pathSeparator}Runner.entitlements',
     ).writeAsString('''
 <?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>
-  <key>FlutterDeepLinkingEnabled</key>
-  <true/>
+  <key>com.apple.developer.associated-domains</key>
+  <array>
+  </array>
 </dict>
 </plist>
 ''');
@@ -114,7 +115,7 @@ void main() {
       (f) => f.title == 'iOS associated domains',
     );
     expect(finding.level, FindingLevel.warning);
-    expect(finding.detail.toLowerCase(), contains('missing'));
+    expect(finding.detail.toLowerCase(), contains('applinks'));
   });
 
   test('PASS for valid custom URL schemes on Android and iOS', () async {
