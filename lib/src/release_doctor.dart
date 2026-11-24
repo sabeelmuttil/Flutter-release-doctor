@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_release_doctor/src/app_identity_check.dart';
 import 'package:flutter_release_doctor/src/cicd_check.dart';
 import 'package:flutter_release_doctor/src/deep_link_push_check.dart';
+import 'package:flutter_release_doctor/src/doctor_config.dart';
 import 'package:flutter_release_doctor/src/environment_flavor_check.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
@@ -23,8 +24,15 @@ class DoctorReport {
   int get score {
     var result = 100;
     for (final finding in findings) {
-      if (finding.level == FindingLevel.error) result -= 15;
-      if (finding.level == FindingLevel.warning) result -= 5;
+      switch (finding.level) {
+        case FindingLevel.error:
+          result -= 15;
+        case FindingLevel.warning:
+          result -= 5;
+        case FindingLevel.info:
+        case FindingLevel.passed:
+          break;
+      }
     }
     return result.clamp(0, 100);
   }
@@ -36,9 +44,12 @@ class DoctorReport {
       final icon = switch (finding.level) {
         FindingLevel.error => 'ERROR',
         FindingLevel.warning => 'WARN ',
+        FindingLevel.info => 'INFO ',
         FindingLevel.passed => 'PASS ',
       };
-      buffer.writeln('[$icon] ${finding.title}: ${finding.detail}');
+      buffer.writeln(
+        '[$icon] [${finding.id}] ${finding.title}: ${finding.detail}',
+      );
       if (finding.fix != null) buffer.writeln('       Fix: ${finding.fix}');
     }
     return buffer.toString().trimRight();
@@ -53,7 +64,9 @@ class DoctorReport {
       if (items.isEmpty) continue;
       buffer.writeln('## ${level.name.toUpperCase()}\n');
       for (final finding in items) {
-        buffer.writeln('- **${finding.title}** — ${finding.detail}');
+        buffer.writeln(
+          '- **${finding.title}** (`${finding.id}`) — ${finding.detail}',
+        );
         if (finding.fix != null) buffer.writeln('  - Fix: ${finding.fix}');
       }
       buffer.writeln();
@@ -64,17 +77,23 @@ class DoctorReport {
 
 class ReleaseDoctor {
   Future<DoctorReport> check(Directory project) async {
-    final findings = <Finding>[];
+    final configResult = await DoctorConfigLoader().load(project);
+    final findings = <Finding>[...configResult.findings];
+    final approvedHosts = configResult.config.approvedHosts;
+
     final pubspec = File(_path(project, 'pubspec.yaml'));
     if (!await pubspec.exists()) {
-      return DoctorReport(project, [
+      findings.add(
         const Finding(
           FindingLevel.error,
           'Flutter project',
           'pubspec.yaml was not found.',
+          id: 'flutter-project-missing',
           fix: 'Run this command from a Flutter project root.',
         ),
-      ]);
+      );
+      final applied = DoctorConfigLoader().apply(configResult.config, findings);
+      return DoctorReport(project, applied);
     }
 
     final pubspecText = await pubspec.readAsString();
@@ -83,20 +102,24 @@ class ReleaseDoctor {
         FindingLevel.passed,
         'Flutter project',
         'pubspec.yaml found.',
+        id: 'flutter-project-found',
       ),
     );
     _checkVersion(pubspecText, findings);
     await _checkFirebase(project, findings);
     await _checkAndroid(project, findings);
     await _checkIos(project, findings);
-    await _checkSecurity(project, findings);
+    await _checkSecurity(project, findings, approvedHosts);
     await AppIdentityCheck().run(project, findings);
-    await EnvironmentFlavorCheck().run(project, findings);
+    await EnvironmentFlavorCheck(approvedHosts: approvedHosts)
+        .run(project, findings);
     await SigningCheck().run(project, findings);
     await PlatformCompatibilityCheck().run(project, findings);
     await DeepLinkPushCheck().run(project, findings);
     await CicdCheck().run(project, findings);
-    return DoctorReport(project, findings);
+
+    final applied = DoctorConfigLoader().apply(configResult.config, findings);
+    return DoctorReport(project, applied);
   }
 
   void _checkVersion(String pubspec, List<Finding> findings) {
@@ -110,6 +133,7 @@ class ReleaseDoctor {
           FindingLevel.error,
           'App version',
           'No version found in pubspec.yaml.',
+          id: 'app-version',
           fix: 'Add version: 1.0.0+1 to pubspec.yaml.',
         ),
       );
@@ -122,13 +146,19 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'App version',
           '`$value` is not in recommended x.y.z+build format.',
+          id: 'app-version',
           fix: 'Use a version such as 1.0.0+1.',
         ),
       );
       return;
     }
     findings.add(
-      Finding(FindingLevel.passed, 'App version', '`$value` is valid.'),
+      Finding(
+        FindingLevel.passed,
+        'App version',
+        '`$value` is valid.',
+        id: 'app-version',
+      ),
     );
   }
 
@@ -143,6 +173,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'Firebase configuration',
           'No Android or iOS Firebase config found.',
+          id: 'firebase-configuration',
           fix: 'Ignore this only when Firebase is intentionally not used.',
         ),
       );
@@ -153,6 +184,7 @@ class ReleaseDoctor {
         FindingLevel.passed,
         'Firebase configuration',
         'Found ${androidExists ? 'Android' : ''}${androidExists && iosExists ? ' and ' : ''}${iosExists ? 'iOS' : ''} config file(s).',
+        id: 'firebase-configuration',
       ),
     );
     if (androidExists) {
@@ -163,6 +195,7 @@ class ReleaseDoctor {
             FindingLevel.passed,
             'Android Firebase JSON',
             'google-services.json is valid JSON.',
+            id: 'android-firebase-json',
           ),
         );
       } catch (_) {
@@ -171,6 +204,7 @@ class ReleaseDoctor {
             FindingLevel.error,
             'Android Firebase JSON',
             'google-services.json is not valid JSON.',
+            id: 'android-firebase-json',
             fix: 'Download a fresh file from Firebase Console.',
           ),
         );
@@ -188,6 +222,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'Android manifest',
           'AndroidManifest.xml was not found.',
+          id: 'android-manifest',
         ),
       );
       return;
@@ -212,6 +247,7 @@ class ReleaseDoctor {
           FindingLevel.passed,
           'Android permissions',
           'No high-sensitivity permissions detected.',
+          id: 'android-sensitive-permissions',
         ),
       );
     } else {
@@ -220,6 +256,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'Android permissions',
           'Sensitive permissions: ${risky.join(', ')}.',
+          id: 'android-sensitive-permissions',
           fix:
               'Confirm every permission is essential and declared accurately in Play Data Safety.',
         ),
@@ -235,6 +272,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'iOS Info.plist',
           'Info.plist was not found.',
+          id: 'ios-info-plist',
         ),
       );
       return;
@@ -254,11 +292,21 @@ class ReleaseDoctor {
         present.isEmpty
             ? 'No sensitive permission descriptions found.'
             : 'Found: ${present.join(', ')}.',
+        id: 'ios-privacy-descriptions',
       ),
     );
   }
 
-  Future<void> _checkSecurity(Directory project, List<Finding> findings) async {
+  Future<void> _checkSecurity(
+    Directory project,
+    List<Finding> findings,
+    Set<String> approvedHosts,
+  ) async {
+    final approved = approvedHosts.map((h) => h.toLowerCase()).toSet();
+    final httpPattern = RegExp(
+      "http://[^\\s'\"<>]+",
+      caseSensitive: false,
+    );
     final candidates = <File>[];
     await for (final entity in project.list(
       recursive: true,
@@ -285,8 +333,17 @@ class ReleaseDoctor {
     var obviousSecret = false;
     for (final file in candidates) {
       final text = await file.readAsString();
-      insecureHttp = insecureHttp ||
-          RegExp('http:' r'//(?!localhost|10\.0\.2\.2)').hasMatch(text);
+      for (final match in httpPattern.allMatches(text)) {
+        final url = match.group(0)!;
+        final lower = url.toLowerCase();
+        if (lower.contains('localhost') || lower.contains('10.0.2.2')) {
+          continue;
+        }
+        final host = _hostOfUrl(url);
+        if (host != null && approved.contains(host)) continue;
+        insecureHttp = true;
+        break;
+      }
       obviousSecret = obviousSecret ||
           RegExp(
             r'''(?:api[_-]?key|secret|password)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}''',
@@ -299,6 +356,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'Insecure HTTP',
           'A non-local HTTP endpoint was detected.',
+          id: 'insecure-http',
           fix: 'Use HTTPS for production endpoints.',
         ),
       );
@@ -309,6 +367,7 @@ class ReleaseDoctor {
           FindingLevel.warning,
           'Possible hard-coded secret',
           'A long API key, secret, or password-like value was detected.',
+          id: 'hard-coded-secret',
           fix:
               'Review it; rotate real secrets and move them to secure server-side configuration.',
         ),
@@ -320,9 +379,16 @@ class ReleaseDoctor {
           FindingLevel.passed,
           'Basic security scan',
           'No insecure HTTP endpoint or obvious hard-coded secret detected.',
+          id: 'basic-security-scan',
         ),
       );
     }
+  }
+
+  String? _hostOfUrl(String url) {
+    final match =
+        RegExp(r'https?://([^/?:#]+)', caseSensitive: false).firstMatch(url);
+    return match?.group(1)?.toLowerCase();
   }
 
   String _path(Directory project, String relative) =>

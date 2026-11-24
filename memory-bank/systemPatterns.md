@@ -10,3 +10,5 @@
 - Platform compatibility lives in `lib/src/platform_compatibility_check.dart`
 - Deep link / push readiness lives in `lib/src/deep_link_push_check.dart`
 - CI/CD pipeline readiness lives in `lib/src/cicd_check.dart`
+- Project config lives in `lib/src/doctor_config.dart`; every `Finding` has a stable `id`
+- Config apply order: ignore (ERROR→WARNING or hide) then severity_overrides; secret IDs are non-suppressible

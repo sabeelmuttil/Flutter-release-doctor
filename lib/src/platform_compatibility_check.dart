@@ -46,6 +46,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android SDK levels',
           'Android folder exists but app Gradle file was not found; minSdk/targetSdk/compileSdk cannot be resolved.',
+          id: 'android-sdk-levels',
         ),
       );
       return;
@@ -83,6 +84,7 @@ class PlatformCompatibilityCheck {
           'Android SDK levels',
           'Could not resolve ${unresolved.join(', ')} from ${gradle.uri.pathSegments.last}'
               '${_resolvedSummary(minSdk, targetSdk, compileSdk)}.',
+          id: 'android-sdk-levels',
           fix:
               'Set numeric minSdk, targetSdk, and compileSdk (or resolvable flutter.* / ext values) in the app Gradle file.',
         ),
@@ -93,6 +95,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.passed,
           'Android SDK levels',
           'Resolved minSdk=$minSdk, targetSdk=$targetSdk, compileSdk=$compileSdk with valid ordering.',
+          id: 'android-sdk-levels',
         ),
       );
     } else {
@@ -101,6 +104,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.error,
           'Android SDK levels',
           'Invalid SDK ordering: minSdk=$minSdk, targetSdk=$targetSdk, compileSdk=$compileSdk (expected minSdk ≤ targetSdk ≤ compileSdk).',
+          id: 'android-sdk-levels',
           fix:
               'Raise targetSdk/compileSdk or lower minSdk so minSdk ≤ targetSdk ≤ compileSdk.',
         ),
@@ -113,6 +117,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android targetSdk',
           'targetSdk is missing and could not be resolved.',
+          id: 'android-target-sdk',
           fix: 'Set targetSdk explicitly for store builds.',
         ),
       );
@@ -122,6 +127,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android targetSdk',
           'Discovered targetSdk=$targetSdk, which is clearly old for a modern store release.',
+          id: 'android-target-sdk',
           fix:
               'Review and update targetSdk for current Play store expectations (Release Doctor does not prescribe a specific latest value).',
         ),
@@ -150,6 +156,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android cleartext traffic',
           'AndroidManifest sets android:usesCleartextTraffic="true".',
+          id: 'android-cleartext-traffic',
           fix:
               'Disable cleartext traffic for release builds unless HTTP is intentionally required.',
         ),
@@ -177,6 +184,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android POST_NOTIFICATIONS',
           'Notification-related Firebase dependency/config appears present, but AndroidManifest.xml was not found to verify POST_NOTIFICATIONS.',
+          id: 'android-post-notifications',
         ),
       );
       return;
@@ -190,6 +198,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'Android POST_NOTIFICATIONS',
           'Notification-related Firebase dependency/config is present, but android.permission.POST_NOTIFICATIONS is not declared.',
+          id: 'android-post-notifications',
           fix:
               'Declare POST_NOTIFICATIONS when targeting modern Android if the app shows notifications.',
         ),
@@ -251,6 +260,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.warning,
           'iOS deployment target',
           'ios/ exists but project.pbxproj was not found; IPHONEOS_DEPLOYMENT_TARGET cannot be resolved.',
+          id: 'ios-deployment-target',
         ),
       );
     } else {
@@ -269,6 +279,7 @@ class PlatformCompatibilityCheck {
             FindingLevel.warning,
             'iOS deployment target',
             'IPHONEOS_DEPLOYMENT_TARGET could not be resolved from project.pbxproj.',
+            id: 'ios-deployment-target',
             fix:
                 'Set IPHONEOS_DEPLOYMENT_TARGET on Runner build configurations.',
           ),
@@ -281,6 +292,7 @@ class PlatformCompatibilityCheck {
               FindingLevel.passed,
               'iOS deployment target',
               'IPHONEOS_DEPLOYMENT_TARGET=${unique.single} is resolved and consistent across build configurations.',
+              id: 'ios-deployment-target',
             ),
           );
         } else {
@@ -289,6 +301,7 @@ class PlatformCompatibilityCheck {
               FindingLevel.warning,
               'iOS deployment target',
               'IPHONEOS_DEPLOYMENT_TARGET differs across configurations: ${unique.join(', ')}.',
+              id: 'ios-deployment-target',
               fix:
                   'Align Debug/Release (and other) Runner configurations on one deployment target.',
             ),
@@ -311,6 +324,7 @@ class PlatformCompatibilityCheck {
           FindingLevel.passed,
           'iOS privacy manifest',
           'Found `${_relative(project, manifest)}`. Contents were not validated for full App Store compliance.',
+          id: 'ios-privacy-manifest',
         ),
       );
       return;
@@ -324,6 +338,7 @@ class PlatformCompatibilityCheck {
         FindingLevel.warning,
         'iOS privacy manifest',
         'Privacy-sensitive APIs or permission usage descriptions are present, but no PrivacyInfo.xcprivacy was found.',
+        id: 'ios-privacy-manifest',
         fix:
             'Add a PrivacyInfo.xcprivacy manifest covering required-reason APIs and tracked data for App Store submission.',
       ),

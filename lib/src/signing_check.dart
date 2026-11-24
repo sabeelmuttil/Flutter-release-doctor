@@ -34,6 +34,7 @@ class SigningCheck {
           FindingLevel.warning,
           'Android release signing',
           'Android folder exists but android/app/build.gradle(.kts) was not found; signing configuration cannot be resolved.',
+          id: 'android-release-signing',
           fix:
               'Ensure the standard Flutter Android Gradle files are present before release.',
         ),
@@ -49,6 +50,7 @@ class SigningCheck {
           FindingLevel.warning,
           'Android release signing',
           'No `release` build type was found in ${gradle.uri.pathSegments.last}; signing configuration cannot be resolved.',
+          id: 'android-release-signing',
           fix:
               'Define a `release` buildType with an explicit non-debug signingConfig.',
         ),
@@ -62,6 +64,7 @@ class SigningCheck {
           FindingLevel.error,
           'Android release signing',
           'The `release` build type explicitly uses `signingConfigs.debug`.',
+          id: 'android-release-signing',
           fix:
               'Configure a release signingConfig (typically loaded from key.properties) and assign it to the release build type.',
         ),
@@ -77,6 +80,7 @@ class SigningCheck {
             FindingLevel.passed,
             'Android release signing',
             'Release signingConfig is configured and a local key.properties (or equivalent) reference is present.',
+            id: 'android-release-signing',
           ),
         );
       } else if (!signingConfigured &&
@@ -87,6 +91,7 @@ class SigningCheck {
             FindingLevel.warning,
             'Android release signing',
             'Release build type exists in ${gradle.uri.pathSegments.last} but release signingConfig / key.properties could not be resolved.',
+            id: 'android-release-signing',
             fix:
                 'Add a release signingConfig backed by key.properties (or your CI secret store) and wire it to the release build type.',
           ),
@@ -97,6 +102,7 @@ class SigningCheck {
             FindingLevel.warning,
             'Android release signing',
             'Android signing setup is partially present but could not be fully resolved from ${gradle.uri.pathSegments.last}.',
+            id: 'android-release-signing',
             fix:
                 'Confirm release signingConfig and key.properties are both configured for store builds.',
           ),
@@ -111,6 +117,7 @@ class SigningCheck {
               FindingLevel.warning,
               'Android key.properties gitignore',
               '`${_relative(project, keyProps)}` exists but is not ignored by `.gitignore`.',
+              id: 'android-key-properties-gitignore',
               fix:
                   'Add `key.properties` (or the exact path) to `.gitignore` so signing secrets are never committed.',
             ),
@@ -150,6 +157,7 @@ class SigningCheck {
           FindingLevel.passed,
           'Android release minification',
           'Release build explicitly configures minification and resource shrinking.',
+          id: 'android-release-minification',
         ),
       );
     } else {
@@ -162,6 +170,7 @@ class SigningCheck {
           FindingLevel.warning,
           'Android release minification',
           'Release build does not explicitly configure $missing.',
+          id: 'android-release-minification',
           fix:
               'Set minifyEnabled/isMinifyEnabled and shrinkResources/isShrinkResources in the release build type.',
         ),
@@ -181,6 +190,7 @@ class SigningCheck {
           FindingLevel.warning,
           'iOS release signing',
           'ios/ exists but Runner.xcodeproj/project.pbxproj was not found; signing settings cannot be resolved.',
+          id: 'ios-release-signing',
           fix: 'Restore the Flutter iOS Xcode project before release.',
         ),
       );
@@ -195,6 +205,7 @@ class SigningCheck {
           FindingLevel.warning,
           'iOS release signing',
           'No Release build configuration was found in project.pbxproj.',
+          id: 'ios-release-signing',
           fix: 'Ensure a Release XCBuildConfiguration exists for Runner.',
         ),
       );
@@ -214,6 +225,7 @@ class SigningCheck {
           FindingLevel.passed,
           'iOS release signing',
           'Release configuration defines CODE_SIGN_STYLE and DEVELOPMENT_TEAM.',
+          id: 'ios-release-signing',
         ),
       );
     } else {
@@ -226,6 +238,7 @@ class SigningCheck {
           FindingLevel.warning,
           'iOS release signing',
           'Release signing settings could not be resolved ($missing missing or uses an unsupported variable structure).',
+          id: 'ios-release-signing',
           fix:
               'Set CODE_SIGN_STYLE and DEVELOPMENT_TEAM on the Release configuration in Xcode (values are not printed by Release Doctor).',
         ),
@@ -290,6 +303,7 @@ class SigningCheck {
         FindingLevel.warning,
         'iOS Release scheme',
         'A Release/production scheme or Archive action references a Debug configuration: ${problems.join('; ')}.',
+        id: 'ios-release-scheme',
         fix:
             'Point Archive/Profile actions for release schemes at the Release build configuration.',
       ),
@@ -347,6 +361,7 @@ class SigningCheck {
           FindingLevel.warning,
           'iOS push entitlements',
           'Push notification capability appears referenced, but `aps-environment` was not found in Runner entitlements.',
+          id: 'ios-push-entitlements',
           fix:
               'Add `aps-environment` to Runner.entitlements for the correct development/production push environment.',
         ),
@@ -357,6 +372,7 @@ class SigningCheck {
           FindingLevel.passed,
           'iOS push entitlements',
           'Runner entitlements define `aps-environment` for push notifications.',
+          id: 'ios-push-entitlements',
         ),
       );
     }

@@ -57,6 +57,7 @@ class CicdCheck {
           FindingLevel.warning,
           'CI/CD workflows',
           'No `.github/workflows` directory was found, so release pipeline readiness could not be verified.',
+          id: 'missing-ci-workflow',
           fix:
               'Add GitHub Actions workflows for Flutter validation and Android/iOS release builds.',
         ),
@@ -71,6 +72,7 @@ class CicdCheck {
           FindingLevel.warning,
           'CI/CD workflows',
           '`.github/workflows` exists but no `.yml`/`.yaml` workflow files were found.',
+          id: 'ci-workflows-empty',
           fix: 'Add at least one GitHub Actions workflow for CI/CD.',
         ),
       );
@@ -125,6 +127,7 @@ class CicdCheck {
           'CI Flutter validation',
           'Workflow(s) run `flutter pub get` and '
               '${hasAnalyze && hasTest ? '`flutter analyze` / `flutter test`' : hasAnalyze ? '`flutter analyze`' : '`flutter test`'}.',
+          id: 'ci-flutter-validation',
         ),
       );
     } else {
@@ -133,6 +136,7 @@ class CicdCheck {
           FindingLevel.warning,
           'CI Flutter validation',
           'Workflow files exist but no Flutter validation step combining `flutter pub get` with `flutter analyze` or `flutter test` was found.',
+          id: 'ci-flutter-validation',
           fix:
               'Add steps that run `flutter pub get` and `flutter analyze` or `flutter test`.',
         ),
@@ -155,6 +159,7 @@ class CicdCheck {
           FindingLevel.passed,
           'CI Android release build',
           'Android release build command found in: ${androidWorkflows.map((w) => w.name).join(', ')}.',
+          id: 'ci-android-release-build',
         ),
       );
       _checkSigningRefsForReleaseWorkflows(
@@ -168,6 +173,7 @@ class CicdCheck {
           FindingLevel.warning,
           'CI Android release build',
           'Android project exists but no Android release build workflow was found.',
+          id: 'ci-android-release-build',
           fix:
               'Add a workflow step such as `flutter build appbundle --release` or Gradle `bundleRelease`.',
         ),
@@ -190,6 +196,7 @@ class CicdCheck {
           FindingLevel.passed,
           'CI iOS release build',
           'iOS release/archive build command found in: ${iosWorkflows.map((w) => w.name).join(', ')}.',
+          id: 'ci-ios-release-build',
         ),
       );
       _checkSigningRefsForReleaseWorkflows(iosWorkflows, 'iOS', findings);
@@ -199,6 +206,7 @@ class CicdCheck {
           FindingLevel.warning,
           'CI iOS release build',
           'iOS project exists but no iOS release build workflow was found.',
+          id: 'ci-ios-release-build',
           fix:
               'Add a workflow step such as `flutter build ipa` or `xcodebuild archive`.',
         ),
@@ -227,11 +235,15 @@ class CicdCheck {
 
       if (hasAnySecrets && mentionsSigning) continue;
 
+      final signingId = platform == 'Android'
+          ? 'ci-android-signing-secrets'
+          : 'ci-ios-signing-secrets';
       findings.add(
         Finding(
           FindingLevel.warning,
           'CI $platform signing secrets',
           'Release build found in `${workflow.name}` but no signing-related secret/env reference was detected.',
+          id: signingId,
           fix:
               'Reference signing material through GitHub Actions secrets or env (for example KEYSTORE_PASSWORD)—never hard-code values.',
         ),
@@ -254,6 +266,7 @@ class CicdCheck {
               FindingLevel.error,
               'CI hard-coded secret',
               'Workflow `${workflow.name}` appears to contain a hard-coded signing password, private key, API token, or service-account JSON value.',
+              id: 'ci-hard-coded-secret',
               fix:
                   'Remove the hard-coded value and load it from GitHub Actions secrets instead. Secret values are not shown in this report.',
             ),
@@ -283,6 +296,7 @@ class CicdCheck {
         FindingLevel.warning,
         'CI unpinned actions',
         'Workflow uses deprecated or unpinned third-party actions: ${offenders.take(5).join('; ')}${offenders.length > 5 ? '…' : ''}.',
+        id: 'ci-unpinned-actions',
         fix:
             'Pin actions to a version tag or commit SHA (for example `actions/checkout@v4`). Avoid `@main` / `@master` / unversioned refs.',
       ),
@@ -331,6 +345,7 @@ class CicdCheck {
             FindingLevel.warning,
             'CI release trigger',
             'Release workflow `${workflow.name}` appears to run on broad push events without branch/tag restriction.',
+            id: 'ci-release-trigger',
             fix:
                 'Restrict release builds to `workflow_dispatch`, tags, or a protected release branch.',
           ),
@@ -342,6 +357,7 @@ class CicdCheck {
             FindingLevel.warning,
             'CI release trigger',
             'Release workflow `${workflow.name}` includes an unrestricted push trigger alongside safer triggers.',
+            id: 'ci-release-trigger',
             fix:
                 'Remove catch-all `push` triggers from release workflows or limit them with branches/tags.',
           ),
@@ -355,6 +371,7 @@ class CicdCheck {
           FindingLevel.passed,
           'CI release trigger',
           'A release workflow has a manual (`workflow_dispatch`) or protected tag/release trigger.',
+          id: 'ci-release-trigger',
         ),
       );
     }

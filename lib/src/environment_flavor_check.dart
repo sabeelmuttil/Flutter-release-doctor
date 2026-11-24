@@ -5,6 +5,10 @@ import 'package:flutter_release_doctor/src/finding.dart';
 
 /// Detects risky multi-environment / flavor configuration mistakes.
 class EnvironmentFlavorCheck {
+  const EnvironmentFlavorCheck({this.approvedHosts = const {}});
+
+  final Set<String> approvedHosts;
+
   static const _envFileNames = <String>{
     '.env',
     '.env.dev',
@@ -92,6 +96,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.warning,
           'Production environment file',
           'Environment files found (${envFiles.map((f) => f.name).join(', ')}) but no production-like file (`.env.prod` or `.env.production`).',
+          id: 'production-environment-file',
           fix:
               'Add a production environment file with the production API base URL.',
         ),
@@ -109,6 +114,7 @@ class EnvironmentFlavorCheck {
             FindingLevel.error,
             'Production API URL',
             'Production file `${file.name}` API base URL `${_safeUrl(url)}` looks like a non-production endpoint.',
+            id: 'production-api-url',
             fix:
                 'Point production at the real production API. Do not use uat, staging, dev, localhost, or 10.0.2.2 in production.',
           ),
@@ -125,6 +131,7 @@ class EnvironmentFlavorCheck {
             FindingLevel.warning,
             'Non-production API URL',
             'Environment file `${file.name}` points to a production-like API `${_safeUrl(url)}`.',
+            id: 'non-production-api-url',
             fix:
                 'Confirm this non-production environment should not use a dedicated non-prod API host.',
           ),
@@ -144,6 +151,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.warning,
           'Duplicate environment API URL',
           'Multiple environment files share the same API base URL `${_safeUrl(entry.key)}`: ${entry.value.join(', ')}.',
+          id: 'duplicate-environment-api-url',
           fix:
               'Give each environment its own API base URL unless they intentionally share one.',
         ),
@@ -159,6 +167,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.passed,
           'Environment files',
           'Found ${envFiles.length} environment files with a clear naming convention and non-empty API base URLs.',
+          id: 'environment-files',
         ),
       );
     } else if (envFiles.length >= 2 && !allHaveUrls) {
@@ -170,6 +179,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.warning,
           'Environment API URL',
           'Environment file(s) missing a non-empty API base URL: ${missing.join(', ')}.',
+          id: 'environment-api-url',
           fix:
               'Set API_BASE_URL (or BASE_URL / API_URL) in each environment file.',
         ),
@@ -198,6 +208,7 @@ class EnvironmentFlavorCheck {
       for (final match in _dartApiAssignment.allMatches(text)) {
         final url = match.group(1)!;
         if (_isLocalUrl(url)) continue;
+        if (_isApprovedHost(url)) continue;
         final label = '$relative → ${_safeUrl(url)}';
         if (seen.add(label)) offenders.add(label);
       }
@@ -205,6 +216,7 @@ class EnvironmentFlavorCheck {
       for (final match in _hardCodedUrl.allMatches(text)) {
         final url = match.group(0)!;
         if (_isLocalUrl(url)) continue;
+        if (_isApprovedHost(url)) continue;
         if (!_looksLikeApiUrl(url)) continue;
         final label = '$relative → ${_safeUrl(url)}';
         if (seen.add(label)) offenders.add(label);
@@ -217,6 +229,7 @@ class EnvironmentFlavorCheck {
         FindingLevel.warning,
         'Hard-coded API URL',
         'Non-local API URL(s) found in Dart source outside approved environment/config files: ${offenders.take(5).join('; ')}${offenders.length > 5 ? '…' : ''}.',
+        id: 'hard-coded-api-url',
         fix:
             'Move API base URLs into `.env*` or a dedicated environment config loaded per flavor.',
       ),
@@ -260,6 +273,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.passed,
           'Android product flavors',
           'Product flavors map clearly to environments: ${flavorNames.join(', ')}.',
+          id: 'android-product-flavors',
         ),
       );
       return;
@@ -270,6 +284,7 @@ class EnvironmentFlavorCheck {
         FindingLevel.warning,
         'Android product flavors',
         'Android product flavors exist (${flavorNames.join(', ')}) but their names/application IDs cannot be mapped clearly to environments (dev/uat/staging/prod).',
+        id: 'android-product-flavors',
         fix:
             'Name flavors after environments and use distinct applicationId or applicationIdSuffix values per flavor.',
       ),
@@ -324,6 +339,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.warning,
           'iOS schemes',
           'Multiple iOS schemes found (${schemeNames.join(', ')}) without clear environment naming.',
+          id: 'ios-schemes',
           fix:
               'Name shared schemes/configurations after environments (dev, uat, staging, prod) when using flavors.',
         ),
@@ -338,6 +354,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.passed,
           'iOS environment configurations',
           'iOS schemes/configurations appear environment-aware: $labels.',
+          id: 'ios-environment-configurations',
         ),
       );
     }
@@ -433,6 +450,7 @@ class EnvironmentFlavorCheck {
             FindingLevel.warning,
             'Firebase project ID',
             'Firebase config `${item.source}` looks production-named but project ID `${item.projectId}` contains a non-production marker.',
+            id: 'firebase-project-id',
             fix:
                 'Use the production Firebase project config for production builds.',
           ),
@@ -449,6 +467,7 @@ class EnvironmentFlavorCheck {
           FindingLevel.passed,
           'Firebase environments',
           'Detected multiple Firebase project IDs across config files: $summary.',
+          id: 'firebase-environments',
         ),
       );
     }
@@ -564,6 +583,16 @@ class EnvironmentFlavorCheck {
   String? _hostOf(String url) {
     final match = RegExp(r'https?://([^/?:#]+)').firstMatch(url);
     return match?.group(1)?.toLowerCase();
+  }
+
+  bool _isApprovedHost(String url) {
+    if (approvedHosts.isEmpty) return false;
+    final host = _hostOf(url);
+    if (host == null) return false;
+    for (final approved in approvedHosts) {
+      if (host == approved.toLowerCase()) return true;
+    }
+    return false;
   }
 
   /// Returns the inside of `keyword { ... }` using brace matching.

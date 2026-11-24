@@ -1,0 +1,28 @@
+# Flutter Release Doctor project configuration
+# Copy to `.release-doctor.yaml` in your Flutter app root and customize.
+
+# Config schema version (currently only 1 is used).
+version: 1
+
+# Hide findings by exact machine-readable ID (see report `[id]` labels).
+# - WARNING/INFO/PASSED matches are omitted from the report.
+# - ERROR matches are not fully hidden: they are downgraded to WARNING
+#   with a note that project configuration suppressed them.
+# - Hard-coded secret / signing-material finding IDs cannot be suppressed
+#   (`hard-coded-secret`, `ci-hard-coded-secret`).
+ignore:
+  - android-sensitive-permissions
+  - ios-privacy-manifest
+
+# Force a finding ID to a specific severity: error | warning | info
+# Invalid severity values cause a configuration ERROR.
+severity_overrides:
+  hard-coded-api-url: error
+  missing-ci-workflow: info
+
+# Hostnames that are allowed in hard-coded / security URL checks.
+# Matching hosts will not trigger the hard-coded API URL warning
+# (and insecure HTTP findings for those hosts are skipped).
+approved_hosts:
+  - api.example.com
+  - staging.example.com

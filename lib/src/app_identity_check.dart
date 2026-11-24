@@ -25,6 +25,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'Android Firebase config',
           'android/ exists but android/app/google-services.json is missing.',
+          id: 'android-firebase-config',
           fix:
               'Add google-services.json for this Android app/environment, or ignore if Firebase is unused.',
         ),
@@ -37,6 +38,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'Android app ID',
           appIdResult.unresolvedReason!,
+          id: 'android-app-id',
         ),
       );
     }
@@ -50,6 +52,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'Android Firebase package',
           'Could not resolve package_name from android/app/google-services.json.',
+          id: 'android-firebase-package',
           fix:
               'Confirm the file contains client_info.android_client_info.package_name.',
         ),
@@ -66,6 +69,7 @@ class AppIdentityCheck {
           FindingLevel.passed,
           'Android app identity',
           'Application ID `$appId` matches Firebase package `$appId`.',
+          id: 'android-app-identity',
         ),
       );
     } else {
@@ -75,6 +79,7 @@ class AppIdentityCheck {
           FindingLevel.error,
           'Android app identity',
           'Application ID `$appId` does not match Firebase package `$firebaseLabel`.',
+          id: 'android-app-identity',
           fix:
               'Download google-services.json for the correct Android app/environment from Firebase Console.',
         ),
@@ -97,6 +102,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'iOS Firebase config',
           'ios/ exists but ios/Runner/GoogleService-Info.plist is missing.',
+          id: 'ios-firebase-config',
           fix:
               'Add GoogleService-Info.plist for this iOS app/environment, or ignore if Firebase is unused.',
         ),
@@ -109,6 +115,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'iOS bundle ID',
           bundleResult.unresolvedReason!,
+          id: 'ios-bundle-id',
         ),
       );
     }
@@ -122,6 +129,7 @@ class AppIdentityCheck {
           FindingLevel.warning,
           'iOS Firebase bundle ID',
           'Could not resolve BUNDLE_ID from ios/Runner/GoogleService-Info.plist.',
+          id: 'ios-firebase-bundle-id',
           fix: 'Confirm the plist contains a BUNDLE_ID string value.',
         ),
       );
@@ -137,6 +145,7 @@ class AppIdentityCheck {
           FindingLevel.passed,
           'iOS app identity',
           'Bundle ID `$bundleId` matches Firebase BUNDLE_ID `$firebaseBundle`.',
+          id: 'ios-app-identity',
         ),
       );
     } else {
@@ -145,6 +154,7 @@ class AppIdentityCheck {
           FindingLevel.error,
           'iOS app identity',
           'Bundle ID `$bundleId` does not match Firebase BUNDLE_ID `$firebaseBundle`.',
+          id: 'ios-app-identity',
           fix:
               'Download GoogleService-Info.plist for the correct iOS app/environment from Firebase Console.',
         ),

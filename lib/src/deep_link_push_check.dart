@@ -58,6 +58,7 @@ class DeepLinkPushCheck {
               FindingLevel.warning,
               'Android App Links host',
               'An HTTPS app-link intent filter has no host or uses an unresolved placeholder.',
+              id: 'android-app-links-host',
               fix:
                   'Set a concrete android:host on the HTTPS VIEW/BROWSABLE intent filter.',
             ),
@@ -68,6 +69,7 @@ class DeepLinkPushCheck {
               FindingLevel.warning,
               'Android App Links autoVerify',
               'An HTTPS deep-link intent filter is present but android:autoVerify="true" is missing.',
+              id: 'android-app-links-autoverify',
               fix:
                   'Add android:autoVerify="true" for Android App Links verification.',
             ),
@@ -89,6 +91,7 @@ class DeepLinkPushCheck {
                 FindingLevel.warning,
                 'Android custom URL scheme',
                 'A custom URL scheme intent filter uses an unresolved placeholder.',
+                id: 'android-custom-url-scheme',
                 fix: 'Replace placeholder schemes with a concrete scheme name.',
               ),
             );
@@ -106,6 +109,7 @@ class DeepLinkPushCheck {
           FindingLevel.passed,
           'Android App Links',
           'HTTPS app-link intent filter found with android:autoVerify="true" and a host.',
+          id: 'android-app-links',
         ),
       );
     }
@@ -116,6 +120,7 @@ class DeepLinkPushCheck {
           FindingLevel.passed,
           'Android custom URL scheme',
           'Custom URL scheme deep link configured: ${customSchemes.join(', ')}.',
+          id: 'android-custom-url-scheme',
         ),
       );
     }
@@ -154,6 +159,7 @@ class DeepLinkPushCheck {
             FindingLevel.warning,
             'iOS custom URL scheme',
             'CFBundleURLTypes issue: ${parts.join('; ')}.',
+            id: 'ios-custom-url-scheme',
             fix:
                 'Use unique, non-empty URL schemes in Info.plist CFBundleURLTypes.',
           ),
@@ -164,6 +170,7 @@ class DeepLinkPushCheck {
             FindingLevel.passed,
             'iOS custom URL scheme',
             'Custom URL scheme(s) configured: ${nonEmpty.join(', ')}.',
+            id: 'ios-custom-url-scheme',
           ),
         );
       }
@@ -180,6 +187,7 @@ class DeepLinkPushCheck {
             FindingLevel.warning,
             'iOS associated domains',
             'Associated domains include applinks entries that look unresolved or use placeholders.',
+            id: 'ios-associated-domains',
             fix:
                 'Set concrete applinks: domains in Runner entitlements (domain values only; no secrets).',
           ),
@@ -194,6 +202,7 @@ class DeepLinkPushCheck {
             FindingLevel.passed,
             'iOS associated domains',
             'Associated domains include applinks: ${domains.join(', ')}.',
+            id: 'ios-associated-domains',
           ),
         );
       }
@@ -203,6 +212,7 @@ class DeepLinkPushCheck {
           FindingLevel.warning,
           'iOS associated domains',
           'An HTTPS universal-link-style setup appears intended, but associated domains are missing or unresolved.',
+          id: 'ios-associated-domains',
           fix:
               'Add com.apple.developer.associated-domains with at least one applinks: entry in Runner entitlements.',
         ),
@@ -215,6 +225,7 @@ class DeepLinkPushCheck {
           FindingLevel.warning,
           'iOS associated domains',
           'Associated domains entitlement is present but no applinks: domain was found (missing or unresolved).',
+          id: 'ios-associated-domains',
           fix: 'Include at least one applinks:example.com entry.',
         ),
       );
@@ -246,6 +257,7 @@ class DeepLinkPushCheck {
             FindingLevel.warning,
             'Android push notifications',
             'Firebase Messaging is detected but android.permission.POST_NOTIFICATIONS is absent for a modern Android target.',
+            id: 'android-push-notifications',
             fix:
                 'Declare POST_NOTIFICATIONS when using FCM on Android 13+ targets.',
           ),
@@ -259,6 +271,7 @@ class DeepLinkPushCheck {
             declared
                 ? 'Firebase Messaging detected and POST_NOTIFICATIONS is declared.'
                 : 'Firebase Messaging detected; POST_NOTIFICATIONS not required for the resolved older targetSdk.',
+            id: 'android-push-notifications',
           ),
         );
       } else {
@@ -267,6 +280,7 @@ class DeepLinkPushCheck {
             FindingLevel.warning,
             'Android push notifications',
             'Firebase Messaging is detected but notification permission setup could not be fully verified.',
+            id: 'android-push-notifications',
           ),
         );
       }
@@ -282,6 +296,7 @@ class DeepLinkPushCheck {
             FindingLevel.warning,
             'iOS push notifications',
             'Firebase Messaging is detected but aps-environment is missing from Runner entitlements.',
+            id: 'ios-push-notifications',
             fix:
                 'Enable Push Notifications and ensure Runner.entitlements defines aps-environment.',
           ),
@@ -293,6 +308,7 @@ class DeepLinkPushCheck {
             FindingLevel.passed,
             'iOS push notifications',
             'Firebase Messaging detected and aps-environment is present in Runner entitlements.',
+            id: 'ios-push-notifications',
           ),
         );
       }

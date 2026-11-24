@@ -1,8 +1,10 @@
 # Active context
 
-Just implemented **CI/CD release pipeline readiness checks** (`lib/src/cicd_check.dart`):
+Just implemented **project-level configuration and finding suppression**:
 
-- Inspects `.github/workflows/*.{yml,yaml}` only (no network)
-- Flutter validation, Android/iOS release builds, signing secret refs, hard-coded secrets, unpinned actions, release triggers
+- `.release-doctor.yaml` with `ignore`, `severity_overrides`, `approved_hosts`
+- Stable finding `id` on every finding; shown in terminal/Markdown
+- Ignored ERRORs → WARNING with suppression note; secret IDs non-suppressible
+- `yaml` package dependency; `.release-doctor.example.yaml` + README docs
 
-Previously: deep link/push, platform compatibility, signing, environment/flavor, app identity.
+Previously: CI/CD, deep link/push, platform, signing, environment, identity.
