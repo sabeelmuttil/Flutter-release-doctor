@@ -1,0 +1,11 @@
+name: flutter_release_doctor
+description: A local release-readiness auditor for Flutter Android and iOS projects.
+version: 0.1.0+1
+repository: https://github.com/your-org/flutter-release-doctor
+
+environment:
+  sdk: ^3.5.0
+
+executables:
+  flutter_release_doctor: flutter_release_doctor
+

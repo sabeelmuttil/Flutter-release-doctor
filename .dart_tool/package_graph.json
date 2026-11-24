@@ -1,0 +1,14 @@
+{
+  "roots": [
+    "flutter_release_doctor"
+  ],
+  "packages": [
+    {
+      "name": "flutter_release_doctor",
+      "version": "0.1.0+1",
+      "dependencies": [],
+      "devDependencies": []
+    }
+  ],
+  "configVersion": 1
+}

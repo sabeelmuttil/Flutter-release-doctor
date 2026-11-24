@@ -1,0 +1,16 @@
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "flutter_release_doctor",
+      "rootUri": "../",
+      "packageUri": "lib/",
+      "languageVersion": "3.5"
+    }
+  ],
+  "generator": "pub",
+  "generatorVersion": "3.14.0",
+  "flutterRoot": "file:///Users/emvigo/fvm/versions/stable",
+  "flutterVersion": "3.50.1",
+  "pubCache": "file:///Users/emvigo/.pub-cache"
+}
