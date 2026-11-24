@@ -1,9 +1,8 @@
 # Active context
 
-Just implemented **Android and iOS signing / release-build safety checks** (`lib/src/signing_check.dart`):
+Just implemented **Platform compatibility and store-readiness checks** (`lib/src/platform_compatibility_check.dart`):
 
-- Android: release buildType, signingConfig vs debug, key.properties + gitignore, minify/shrink
-- iOS: Release CODE_SIGN_STYLE / DEVELOPMENT_TEAM, Debug-on-Release schemes, aps-environment
-- Secrets (passwords, team IDs, keystore paths, etc.) are never printed
+- Android: minSdk/targetSdk/compileSdk ordering, old/missing targetSdk, cleartext traffic, POST_NOTIFICATIONS when Firebase messaging signals exist
+- iOS: IPHONEOS_DEPLOYMENT_TARGET consistency, PrivacyInfo.xcprivacy presence vs privacy-sensitive usage
 
-Previously: environment/flavor safety, app identity ↔ Firebase consistency.
+Previously: signing/release-build safety, environment/flavor safety, app identity ↔ Firebase.

@@ -7,3 +7,4 @@
 - App identity consistency lives in `lib/src/app_identity_check.dart` and compares each platform only to its own Firebase config
 - Environment/flavor safety lives in `lib/src/environment_flavor_check.dart`
 - Signing/release-build safety lives in `lib/src/signing_check.dart`
+- Platform compatibility lives in `lib/src/platform_compatibility_check.dart`
