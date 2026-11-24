@@ -1,0 +1,7 @@
+# System patterns
+
+- CLI entry: `bin/flutter_release_doctor.dart`
+- Core auditor: `ReleaseDoctor.check` in `lib/src/release_doctor.dart`
+- Findings model: `Finding` / `FindingLevel` in `lib/src/finding.dart`
+- Feature checks append to a shared `List<Finding>`; report formats are console + Markdown
+- App identity consistency lives in `lib/src/app_identity_check.dart` and compares each platform only to its own Firebase config

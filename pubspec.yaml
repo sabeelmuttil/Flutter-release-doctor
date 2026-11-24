@@ -9,3 +9,6 @@ environment:
 executables:
   flutter_release_doctor: flutter_release_doctor
 
+dev_dependencies:
+  test: ^1.25.8
+

@@ -1,16 +1,10 @@
 import 'dart:convert';
 import 'dart:io';
 
-enum FindingLevel { error, warning, passed }
+import 'package:flutter_release_doctor/src/app_identity_check.dart';
+import 'package:flutter_release_doctor/src/finding.dart';
 
-class Finding {
-  const Finding(this.level, this.title, this.detail, {this.fix});
-
-  final FindingLevel level;
-  final String title;
-  final String detail;
-  final String? fix;
-}
+export 'package:flutter_release_doctor/src/finding.dart';
 
 class DoctorReport {
   const DoctorReport(this.project, this.findings);
@@ -91,6 +85,7 @@ class ReleaseDoctor {
     await _checkAndroid(project, findings);
     await _checkIos(project, findings);
     await _checkSecurity(project, findings);
+    await AppIdentityCheck().run(project, findings);
     return DoctorReport(project, findings);
   }
 
@@ -266,25 +261,29 @@ class ReleaseDoctor {
           ) ||
           path.contains(
             '${Platform.pathSeparator}build${Platform.pathSeparator}',
-          )) continue;
+          )) {
+        continue;
+      }
       if (path.endsWith('.dart') ||
           path.endsWith('.env') ||
           path.endsWith('.yaml') ||
-          path.endsWith('.json')) candidates.add(entity);
+          path.endsWith('.json')) {
+        candidates.add(entity);
+      }
     }
     var insecureHttp = false;
     var obviousSecret = false;
     for (final file in candidates) {
       final text = await file.readAsString();
       insecureHttp = insecureHttp ||
-          RegExp('http:' + r'//(?!localhost|10\.0\.2\.2)').hasMatch(text);
+          RegExp('http:' r'//(?!localhost|10\.0\.2\.2)').hasMatch(text);
       obviousSecret = obviousSecret ||
           RegExp(
             r'''(?:api[_-]?key|secret|password)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}''',
             caseSensitive: false,
           ).hasMatch(text);
     }
-    if (insecureHttp)
+    if (insecureHttp) {
       findings.add(
         const Finding(
           FindingLevel.warning,
@@ -293,7 +292,8 @@ class ReleaseDoctor {
           fix: 'Use HTTPS for production endpoints.',
         ),
       );
-    if (obviousSecret)
+    }
+    if (obviousSecret) {
       findings.add(
         const Finding(
           FindingLevel.warning,
@@ -303,7 +303,8 @@ class ReleaseDoctor {
               'Review it; rotate real secrets and move them to secure server-side configuration.',
         ),
       );
-    if (!insecureHttp && !obviousSecret)
+    }
+    if (!insecureHttp && !obviousSecret) {
       findings.add(
         const Finding(
           FindingLevel.passed,
@@ -311,6 +312,7 @@ class ReleaseDoctor {
           'No insecure HTTP endpoint or obvious hard-coded secret detected.',
         ),
       );
+    }
   }
 
   String _path(Directory project, String relative) =>
