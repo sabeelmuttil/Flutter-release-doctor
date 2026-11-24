@@ -1,0 +1,21 @@
+# Dart / pub
+.dart_tool/
+.packages
+build/
+coverage/
+
+# Generated reports
+release-doctor-report.md
+
+# Environment files (keep example)
+.env
+.env.*
+!.env.example
+
+# IDE / editor
+.idea/
+.vscode/
+*.iml
+
+# OS
+.DS_Store

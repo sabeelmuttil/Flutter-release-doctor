@@ -5,3 +5,4 @@
 - Findings model: `Finding` / `FindingLevel` in `lib/src/finding.dart`
 - Feature checks append to a shared `List<Finding>`; report formats are console + Markdown
 - App identity consistency lives in `lib/src/app_identity_check.dart` and compares each platform only to its own Firebase config
+- Environment/flavor safety lives in `lib/src/environment_flavor_check.dart`

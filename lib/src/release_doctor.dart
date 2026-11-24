@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_release_doctor/src/app_identity_check.dart';
+import 'package:flutter_release_doctor/src/environment_flavor_check.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 
 export 'package:flutter_release_doctor/src/finding.dart';
@@ -86,6 +87,7 @@ class ReleaseDoctor {
     await _checkIos(project, findings);
     await _checkSecurity(project, findings);
     await AppIdentityCheck().run(project, findings);
+    await EnvironmentFlavorCheck().run(project, findings);
     return DoctorReport(project, findings);
   }
 

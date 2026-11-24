@@ -8,8 +8,9 @@
 - iOS privacy description presence
 - Basic HTTP / hard-coded secret scan
 - App identity ↔ Firebase consistency (Android + iOS)
+- Environment / flavor safety (env files, hard-coded URLs, flavors, Firebase project IDs)
 - Terminal + Markdown reports
-- Fixture tests for identity pass/mismatch/missing/unresolved
+- Fixture tests for identity and environment/flavor checks
 
 ## Known gaps
 
