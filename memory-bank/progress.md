@@ -11,6 +11,7 @@
 - Environment / flavor safety (env files, hard-coded URLs, flavors, Firebase project IDs)
 - Android / iOS signing and release-build safety
 - Platform compatibility / store-readiness (SDK levels, cleartext, privacy manifest)
+- Deep link and push notification readiness
 - Terminal + Markdown reports
 - Fixture tests for identity and environment/flavor checks
 

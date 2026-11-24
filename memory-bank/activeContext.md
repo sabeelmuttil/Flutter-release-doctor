@@ -1,8 +1,9 @@
 # Active context
 
-Just implemented **Platform compatibility and store-readiness checks** (`lib/src/platform_compatibility_check.dart`):
+Just implemented **Deep Link and Push Notification readiness checks** (`lib/src/deep_link_push_check.dart`):
 
-- Android: minSdk/targetSdk/compileSdk ordering, old/missing targetSdk, cleartext traffic, POST_NOTIFICATIONS when Firebase messaging signals exist
-- iOS: IPHONEOS_DEPLOYMENT_TARGET consistency, PrivacyInfo.xcprivacy presence vs privacy-sensitive usage
+- Android App Links (autoVerify + host), custom URL schemes
+- iOS associated domains (applinks:), CFBundleURLTypes schemes
+- Firebase Messaging → POST_NOTIFICATIONS / aps-environment readiness
 
-Previously: signing/release-build safety, environment/flavor safety, app identity ↔ Firebase.
+Previously: platform compatibility, signing, environment/flavor, app identity.

@@ -8,3 +8,4 @@
 - Environment/flavor safety lives in `lib/src/environment_flavor_check.dart`
 - Signing/release-build safety lives in `lib/src/signing_check.dart`
 - Platform compatibility lives in `lib/src/platform_compatibility_check.dart`
+- Deep link / push readiness lives in `lib/src/deep_link_push_check.dart`

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_release_doctor/src/app_identity_check.dart';
+import 'package:flutter_release_doctor/src/deep_link_push_check.dart';
 import 'package:flutter_release_doctor/src/environment_flavor_check.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
@@ -92,6 +93,7 @@ class ReleaseDoctor {
     await EnvironmentFlavorCheck().run(project, findings);
     await SigningCheck().run(project, findings);
     await PlatformCompatibilityCheck().run(project, findings);
+    await DeepLinkPushCheck().run(project, findings);
     return DoctorReport(project, findings);
   }
 
