@@ -1,0 +1,59 @@
+name: Self-test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+        with:
+          sdk: stable
+
+      - name: Install dependencies
+        run: dart pub get
+
+      - name: Check formatting
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        run: dart analyze
+
+      - name: Test
+        run: dart test
+
+      - name: Run Flutter Release Doctor action
+        id: release-doctor
+        uses: ./
+        with:
+          project-path: .
+          fail-on: error
+          format: console
+          report-path: release-doctor-action-report.txt
+          no-markdown-report: 'false'
+
+      - name: Show action outputs
+        if: always()
+        run: |
+          echo "score=${{ steps.release-doctor.outputs.score }}"
+          echo "errors=${{ steps.release-doctor.outputs.errors }}"
+          echo "warnings=${{ steps.release-doctor.outputs.warnings }}"
+          echo "report-path=${{ steps.release-doctor.outputs.report-path }}"
+
+      - name: Upload reports on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-doctor-self-test-reports
+          path: |
+            release-doctor-report.md
+            release-doctor-action-report.txt
+            ${{ runner.temp }}/release-doctor-internal.json
+          if-no-files-found: ignore

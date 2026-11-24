@@ -1,9 +1,9 @@
 # Active context
 
-Just implemented **structured JSON output and CI-friendly CLI options**:
+Just added a reusable **GitHub Composite Action**:
 
-- `--format console|markdown|json`, `--output`, `--fail-on error|warning|never`, `--no-markdown-report`
-- JSON schema with summary + findings (`suppressed` flag)
-- Protected `--output` overwrite guard; defaults unchanged
+- Root `action.yml` (Dart setup, pub get in action_path, quoted CLI args, JSON metrics outputs)
+- `.github/workflows/self-test.yml` (format/analyze/test + local action)
+- README Action usage with `sabeelmuttil/Flutter-release-doctor@v1`
 
-Previously: project config, CI/CD, deep link/push, platform, signing, environment, identity.
+Previously: JSON/CLI options, project config, CI/CD checks, etc.

@@ -30,6 +30,72 @@ Defaults (unchanged):
 - writes `release-doctor-report.md` into the scanned project
 - exit code `1` when any ERROR finding exists
 
+## GitHub Action
+
+Use this repository as a reusable [composite action](https://docs.github.com/en/actions/creating-actions/creating-a-composite-action). Consumers do **not** need to add this package to their Flutter app `pubspec.yaml`.
+
+### Copy-paste example
+
+```yaml
+name: Release Doctor
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Flutter Release Doctor
+        id: release-doctor
+        uses: sabeelmuttil/Flutter-release-doctor@v1
+        with:
+          project-path: ${{ github.workspace }}
+          fail-on: error
+          format: console
+
+      - name: Print score
+        if: always()
+        run: echo "score=${{ steps.release-doctor.outputs.score }}"
+```
+
+Pin to a release tag (`@v1`) or commit SHA in production. Avoid floating refs like `@main`.
+
+### Action inputs
+
+| Input | Default | Description |
+|-------|---------|-------------|
+| `project-path` | `${{ github.workspace }}` | Flutter project root to audit |
+| `fail-on` | `error` | CLI exit policy: `error`, `warning`, or `never` |
+| `format` | `console` | Report format shown/written: `console`, `markdown`, or `json` |
+| `report-path` | _(empty)_ | Optional file path for the selected format |
+| `no-markdown-report` | `false` | When `true`, skip `release-doctor-report.md` |
+
+### Action outputs
+
+| Output | Description |
+|--------|-------------|
+| `score` | Release score (0–100) |
+| `errors` | ERROR finding count |
+| `warnings` | WARNING finding count |
+| `report-path` | Path to the generated report used for metrics / `report-path` input |
+
+Outputs are derived from an internal JSON run. Secret values are never exposed.
+
+### How `fail-on` blocks PRs and releases
+
+| `fail-on` | Step fails when |
+|-----------|-----------------|
+| `error` (default) | Any ERROR finding exists |
+| `warning` | Any ERROR or WARNING exists (stricter PR gate) |
+| `never` | Never fails after a successful scan (still publishes outputs) |
+
+Use `fail-on: warning` on pull requests when you want incomplete release config to block merge. Use `fail-on: error` to block only hard failures. Use `fail-on: never` when you only want the report/score as an informational check.
+
 ## CLI options
 
 ```bash
