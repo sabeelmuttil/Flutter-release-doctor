@@ -7,6 +7,7 @@ class Finding {
     this.detail, {
     required this.id,
     this.fix,
+    this.suppressed = false,
   });
 
   /// Stable machine-readable finding identifier (kebab-case).
@@ -16,12 +17,16 @@ class Finding {
   final String detail;
   final String? fix;
 
+  /// True when an ERROR was downgraded by project `ignore` configuration.
+  final bool suppressed;
+
   Finding copyWith({
     FindingLevel? level,
     String? title,
     String? detail,
     String? id,
     String? fix,
+    bool? suppressed,
   }) {
     return Finding(
       level ?? this.level,
@@ -29,8 +34,18 @@ class Finding {
       detail ?? this.detail,
       id: id ?? this.id,
       fix: fix ?? this.fix,
+      suppressed: suppressed ?? this.suppressed,
     );
   }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'level': level.name,
+        'title': title,
+        'detail': detail,
+        'fix': fix,
+        'suppressed': suppressed,
+      };
 }
 
 /// Finding IDs that configuration must not suppress or downgrade below error

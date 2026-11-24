@@ -192,6 +192,7 @@ class DoctorConfigLoader {
         } else if (finding.level == FindingLevel.error) {
           current = finding.copyWith(
             level: FindingLevel.warning,
+            suppressed: true,
             detail:
                 '${finding.detail} (suppressed by project configuration: ignored `${finding.id}` was downgraded from ERROR to WARNING).',
           );

@@ -21,6 +21,9 @@ class DoctorReport {
   bool get hasErrors =>
       findings.any((finding) => finding.level == FindingLevel.error);
 
+  bool get hasWarnings =>
+      findings.any((finding) => finding.level == FindingLevel.warning);
+
   int get score {
     var result = 100;
     for (final finding in findings) {
@@ -72,6 +75,35 @@ class DoctorReport {
       buffer.writeln();
     }
     return buffer.toString();
+  }
+
+  static const jsonSchemaVersion = 1;
+
+  Map<String, dynamic> toJson() {
+    final counts = <String, int>{
+      for (final level in FindingLevel.values) level.name: 0,
+    };
+    for (final finding in findings) {
+      counts[finding.level.name] = (counts[finding.level.name] ?? 0) + 1;
+    }
+    return {
+      'schemaVersion': jsonSchemaVersion,
+      'projectPath': project.path,
+      'score': score,
+      'summary': {
+        'error': counts['error'] ?? 0,
+        'warning': counts['warning'] ?? 0,
+        'info': counts['info'] ?? 0,
+        'passed': counts['passed'] ?? 0,
+      },
+      'findings': findings.map((f) => f.toJson()).toList(),
+    };
+  }
+
+  String toJsonString({bool pretty = true}) {
+    final encoder =
+        pretty ? const JsonEncoder.withIndent('  ') : const JsonEncoder();
+    return encoder.convert(toJson());
   }
 }
 

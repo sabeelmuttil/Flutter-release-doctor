@@ -12,3 +12,4 @@
 - CI/CD pipeline readiness lives in `lib/src/cicd_check.dart`
 - Project config lives in `lib/src/doctor_config.dart`; every `Finding` has a stable `id`
 - Config apply order: ignore (ERROR→WARNING or hide) then severity_overrides; secret IDs are non-suppressible
+- CLI parsing/execution lives in `lib/src/cli.dart`; `bin/flutter_release_doctor.dart` is a thin wrapper

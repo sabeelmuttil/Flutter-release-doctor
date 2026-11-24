@@ -1,0 +1,257 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:flutter_release_doctor/src/release_doctor.dart';
+
+enum OutputFormat { console, markdown, json }
+
+enum FailOn { error, warning, never }
+
+class CliUsageException implements Exception {
+  CliUsageException(this.message);
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+class CliOptions {
+  const CliOptions({
+    required this.projectPath,
+    this.format = OutputFormat.console,
+    this.outputPath,
+    this.failOn = FailOn.error,
+    this.writeMarkdownReport = true,
+    this.help = false,
+  });
+
+  final String projectPath;
+  final OutputFormat format;
+  final String? outputPath;
+  final FailOn failOn;
+  final bool writeMarkdownReport;
+  final bool help;
+}
+
+const protectedOutputNames = <String>{
+  'pubspec.yaml',
+  'pubspec.lock',
+  'analysis_options.yaml',
+  '.release-doctor.yaml',
+  '.env',
+};
+
+bool isProtectedOutputPath(String path) {
+  final name = path.split(RegExp(r'[/\\]')).last;
+  if (protectedOutputNames.contains(name)) return true;
+  if (name == '.env' || name.startsWith('.env.')) return true;
+  return false;
+}
+
+CliOptions parseCliArguments(List<String> arguments) {
+  if (arguments.isEmpty ||
+      arguments.first == '--help' ||
+      arguments.first == '-h' ||
+      arguments.first == 'help') {
+    return CliOptions(projectPath: Directory.current.path, help: true);
+  }
+
+  final command = arguments.first;
+  if (command != 'check') {
+    throw CliUsageException('Unknown command: $command. Run --help for usage.');
+  }
+
+  var format = OutputFormat.console;
+  String? outputPath;
+  var failOn = FailOn.error;
+  var writeMarkdownReport = true;
+  String? projectPath;
+
+  for (var i = 1; i < arguments.length; i++) {
+    final arg = arguments[i];
+    if (arg == '--help' || arg == '-h') {
+      return CliOptions(projectPath: Directory.current.path, help: true);
+    }
+    if (arg == '--no-markdown-report') {
+      writeMarkdownReport = false;
+      continue;
+    }
+    if (arg == '--format') {
+      if (i + 1 >= arguments.length) {
+        throw CliUsageException(
+            '--format requires a value: console|markdown|json');
+      }
+      format = _parseFormat(arguments[++i]);
+      continue;
+    }
+    if (arg.startsWith('--format=')) {
+      format = _parseFormat(arg.substring('--format='.length));
+      continue;
+    }
+    if (arg == '--output') {
+      if (i + 1 >= arguments.length) {
+        throw CliUsageException('--output requires a file path');
+      }
+      outputPath = arguments[++i];
+      continue;
+    }
+    if (arg.startsWith('--output=')) {
+      outputPath = arg.substring('--output='.length);
+      continue;
+    }
+    if (arg == '--fail-on') {
+      if (i + 1 >= arguments.length) {
+        throw CliUsageException(
+            '--fail-on requires a value: error|warning|never');
+      }
+      failOn = _parseFailOn(arguments[++i]);
+      continue;
+    }
+    if (arg.startsWith('--fail-on=')) {
+      failOn = _parseFailOn(arg.substring('--fail-on='.length));
+      continue;
+    }
+    if (arg.startsWith('-')) {
+      throw CliUsageException('Unknown option: $arg');
+    }
+    if (projectPath != null) {
+      throw CliUsageException('Unexpected argument: $arg');
+    }
+    projectPath = arg;
+  }
+
+  return CliOptions(
+    projectPath: projectPath ?? Directory.current.path,
+    format: format,
+    outputPath: outputPath,
+    failOn: failOn,
+    writeMarkdownReport: writeMarkdownReport,
+  );
+}
+
+OutputFormat _parseFormat(String value) {
+  return switch (value) {
+    'console' => OutputFormat.console,
+    'markdown' => OutputFormat.markdown,
+    'json' => OutputFormat.json,
+    _ => throw CliUsageException(
+        'Invalid --format `$value`. Use console|markdown|json.',
+      ),
+  };
+}
+
+FailOn _parseFailOn(String value) {
+  return switch (value) {
+    'error' => FailOn.error,
+    'warning' => FailOn.warning,
+    'never' => FailOn.never,
+    _ => throw CliUsageException(
+        'Invalid --fail-on `$value`. Use error|warning|never.',
+      ),
+  };
+}
+
+String cliHelpText() => '''Flutter Release Doctor
+
+Usage:
+  flutter_release_doctor check [flutter-project-path] [options]
+
+Options:
+  --format console|markdown|json   Output format (default: console)
+  --output <file-path>             Write the selected format to a file
+  --fail-on error|warning|never    Exit policy (default: error)
+  --no-markdown-report             Do not write release-doctor-report.md
+  -h, --help                       Show this help
+
+Defaults:
+  - console output on stdout
+  - writes release-doctor-report.md in the scanned project
+  - exit 1 when ERROR findings exist''';
+
+/// Runs the check command. Returns a process exit code.
+Future<int> runCheckCommand(
+  CliOptions options, {
+  IOSink? stdoutSink,
+  IOSink? stderrSink,
+}) async {
+  final out = stdoutSink ?? stdout;
+  final err = stderrSink ?? stderr;
+
+  if (options.help) {
+    out.writeln(cliHelpText());
+    return 0;
+  }
+
+  final project = Directory(options.projectPath).absolute;
+  final report = await ReleaseDoctor().check(project);
+  final rendered = _render(report, options.format);
+
+  if (options.outputPath != null) {
+    final code = await _writeOutput(options.outputPath!, rendered, out, err);
+    if (code != 0) return code;
+  } else {
+    out.writeln(rendered);
+  }
+
+  if (options.writeMarkdownReport) {
+    final reportFile = File(
+      '${project.path}${Platform.pathSeparator}release-doctor-report.md',
+    );
+    await reportFile.writeAsString(report.toMarkdown());
+    // Keep stdout pure for --format json; mention path only for console default.
+    if (options.format == OutputFormat.console && options.outputPath == null) {
+      out.writeln('\nMarkdown report: ${reportFile.path}');
+    }
+  }
+
+  return _exitCode(report, options.failOn);
+}
+
+String _render(DoctorReport report, OutputFormat format) {
+  return switch (format) {
+    OutputFormat.console => report.toConsole(),
+    OutputFormat.markdown => report.toMarkdown(),
+    OutputFormat.json => report.toJsonString(),
+  };
+}
+
+Future<int> _writeOutput(
+  String outputPath,
+  String contents,
+  IOSink out,
+  IOSink err,
+) async {
+  final file = File(outputPath).absolute;
+  if (await file.exists() && isProtectedOutputPath(file.path)) {
+    err.writeln(
+      'Refusing to overwrite protected file: ${file.path}',
+    );
+    return 64;
+  }
+
+  try {
+    final parent = file.parent;
+    if (!await parent.exists()) {
+      await parent.create(recursive: true);
+    }
+    await file.writeAsString(contents);
+  } catch (e) {
+    err.writeln('Failed to write output file: $e');
+    return 64;
+  }
+
+  out.writeln('Wrote report: ${file.path}');
+  return 0;
+}
+
+int _exitCode(DoctorReport report, FailOn failOn) {
+  return switch (failOn) {
+    FailOn.never => 0,
+    FailOn.error => report.hasErrors ? 1 : 0,
+    FailOn.warning => (report.hasErrors || report.hasWarnings) ? 1 : 0,
+  };
+}
+
+/// Parses JSON text and returns the decoded map (for tests).
+Map<String, dynamic> decodeReportJson(String text) =>
+    jsonDecode(text) as Map<String, dynamic>;
