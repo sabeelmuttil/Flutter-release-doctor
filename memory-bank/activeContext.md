@@ -1,12 +1,9 @@
 # Active context
 
-Just implemented **Environment / flavor safety checks**:
+Just implemented **Android and iOS signing / release-build safety checks** (`lib/src/signing_check.dart`):
 
-- Inspects `.env*` files, `lib/` API URLs, Android product flavors, iOS schemes, Firebase project IDs
-- ERROR for production API URLs containing uat/staging/dev/localhost/10.0.2.2
-- WARNINGs for missing prod env file, duplicate URLs, hard-coded lib URLs, unclear Android flavors, non-prod→prod-like URLs
-- Secrets from env files are never reported
+- Android: release buildType, signingConfig vs debug, key.properties + gitignore, minify/shrink
+- iOS: Release CODE_SIGN_STYLE / DEVELOPMENT_TEAM, Debug-on-Release schemes, aps-environment
+- Secrets (passwords, team IDs, keystore paths, etc.) are never printed
 
-Previously: App identity ↔ Firebase consistency.
-
-Next candidates: signing/release config, min SDK / deployment target, CI readiness.
+Previously: environment/flavor safety, app identity ↔ Firebase consistency.

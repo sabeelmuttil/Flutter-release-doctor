@@ -9,6 +9,7 @@
 - Basic HTTP / hard-coded secret scan
 - App identity ↔ Firebase consistency (Android + iOS)
 - Environment / flavor safety (env files, hard-coded URLs, flavors, Firebase project IDs)
+- Android / iOS signing and release-build safety
 - Terminal + Markdown reports
 - Fixture tests for identity and environment/flavor checks
 
