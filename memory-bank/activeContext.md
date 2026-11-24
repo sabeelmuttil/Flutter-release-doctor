@@ -1,9 +1,8 @@
 # Active context
 
-Just implemented **Deep Link and Push Notification readiness checks** (`lib/src/deep_link_push_check.dart`):
+Just implemented **CI/CD release pipeline readiness checks** (`lib/src/cicd_check.dart`):
 
-- Android App Links (autoVerify + host), custom URL schemes
-- iOS associated domains (applinks:), CFBundleURLTypes schemes
-- Firebase Messaging → POST_NOTIFICATIONS / aps-environment readiness
+- Inspects `.github/workflows/*.{yml,yaml}` only (no network)
+- Flutter validation, Android/iOS release builds, signing secret refs, hard-coded secrets, unpinned actions, release triggers
 
-Previously: platform compatibility, signing, environment/flavor, app identity.
+Previously: deep link/push, platform compatibility, signing, environment/flavor, app identity.

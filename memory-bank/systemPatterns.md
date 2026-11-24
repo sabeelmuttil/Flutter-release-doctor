@@ -9,3 +9,4 @@
 - Signing/release-build safety lives in `lib/src/signing_check.dart`
 - Platform compatibility lives in `lib/src/platform_compatibility_check.dart`
 - Deep link / push readiness lives in `lib/src/deep_link_push_check.dart`
+- CI/CD pipeline readiness lives in `lib/src/cicd_check.dart`

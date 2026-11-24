@@ -12,6 +12,7 @@
 - Android / iOS signing and release-build safety
 - Platform compatibility / store-readiness (SDK levels, cleartext, privacy manifest)
 - Deep link and push notification readiness
+- CI/CD release pipeline readiness (GitHub Actions)
 - Terminal + Markdown reports
 - Fixture tests for identity and environment/flavor checks
 
