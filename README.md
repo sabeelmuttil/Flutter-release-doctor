@@ -190,6 +190,11 @@ severity_overrides:
 
 approved_hosts:
   - api.example.com
+
+transaction_type: digital_goods
+
+payment_flows:
+  - external_gateway
 ```
 
 | Key | Purpose |
@@ -197,6 +202,42 @@ approved_hosts:
 | `ignore` | Exact finding IDs to hide (WARNING/INFO/PASSED). Ignored ERRORs become WARNING with a suppression note. Secret-related IDs cannot be suppressed. |
 | `severity_overrides` | Force a finding ID to `error`, `warning`, or `info`. |
 | `approved_hosts` | Hosts allowed for hard-coded / security URL checks. |
+| `transaction_type` | `digital_goods`, `subscription`, `physical_goods`, `external_payment`, or `unknown`. |
+| `payment_flows` | Optional declarations: `external_gateway`, `cash_on_delivery`, `offline_payment`, `no_in_app_payment`. |
+
+### Transaction / billing safety (offline)
+
+Release Doctor statically scans Dart sources and `pubspec.yaml` for Google Play Billing / `in_app_purchase` and external gateway patterns. It does **not** call Google Play or payment APIs.
+
+Physical-goods detection also looks for Stripe/Razorpay/Paytm/Juspay/Cashfree/PayU/WebView package names, payment/checkout/COD symbols, and payment/checkout API path strings.
+
+| `transaction_type` | Behavior |
+|--------------------|----------|
+| `digital_goods` / `subscription` | ERROR if entitlement appears granted before backend verification; WARNING if acknowledgement, backend verify, or pending/cancelled/restored handling is missing |
+| `physical_goods` | Never requires Google Play Billing. PASS (`external-payment-flow-detected`) on static evidence; PASS (`payment-flow-declared` / `cash-on-delivery-declared`) for honest YAML declarations; WARNING (`external-payment-flow-not-detected`) only when neither evidence nor declarations exist |
+| `external_payment` | Expects Razorpay/Stripe/etc. usage |
+| `unknown` | WARNING (`transaction-type-not-configured`); still flags unsafe client-side digital entitlements when billing code is present |
+
+Every scan emits a `transaction-type` summary (PASS/INFO) so the configured value is always visible in console, Markdown, and JSON reports.
+
+Declared `payment_flows` are **not** treated as proof of secure transaction handling.
+
+Findings include safe file path and line number. Purchase tokens, card data, and API keys are never printed.
+
+Example for a food-delivery / physical-goods app:
+
+```yaml
+transaction_type: physical_goods
+payment_flows:
+  - external_gateway
+  - cash_on_delivery
+```
+
+Example for a premium subscription app:
+
+```yaml
+transaction_type: subscription
+```
 
 Each finding has a stable ID shown in terminal and Markdown output, for example:
 

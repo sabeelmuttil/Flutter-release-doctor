@@ -3,18 +3,40 @@ import 'dart:io';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:yaml/yaml.dart';
 
+enum TransactionType {
+  digitalGoods,
+  subscription,
+  physicalGoods,
+  externalPayment,
+  unknown,
+}
+
+/// Honest project declarations of how physical-goods payments work.
+///
+/// Declarations are never treated as proof of secure transaction handling.
+enum PaymentFlow {
+  externalGateway,
+  cashOnDelivery,
+  offlinePayment,
+  noInAppPayment,
+}
+
 class DoctorConfig {
   const DoctorConfig({
     this.version = 1,
     this.ignore = const {},
     this.severityOverrides = const {},
     this.approvedHosts = const {},
+    this.transactionType = TransactionType.unknown,
+    this.paymentFlows = const {},
   });
 
   final int version;
   final Set<String> ignore;
   final Map<String, FindingLevel> severityOverrides;
   final Set<String> approvedHosts;
+  final TransactionType transactionType;
+  final Set<PaymentFlow> paymentFlows;
 
   static const empty = DoctorConfig();
 }
@@ -158,6 +180,60 @@ class DoctorConfigLoader {
       }
     }
 
+    var transactionType = TransactionType.unknown;
+    final transactionRaw = map['transaction_type'];
+    if (transactionRaw != null) {
+      final parsed = _parseTransactionType(transactionRaw.toString());
+      if (parsed == null) {
+        configFindings.add(
+          Finding(
+            FindingLevel.error,
+            'Project configuration',
+            'Invalid transaction_type `${transactionRaw.toString()}`.',
+            id: 'config-invalid-transaction-type',
+            fix:
+                'Use one of: digital_goods, subscription, physical_goods, external_payment, unknown.',
+          ),
+        );
+      } else {
+        transactionType = parsed;
+      }
+    }
+
+    final paymentFlows = <PaymentFlow>{};
+    final paymentFlowsRaw = map['payment_flows'];
+    if (paymentFlowsRaw != null) {
+      if (paymentFlowsRaw is! List) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`payment_flows` must be a list of flow identifiers.',
+            id: 'config-invalid-payment-flows',
+            fix: 'Example: payment_flows: [external_gateway, cash_on_delivery]',
+          ),
+        );
+      } else {
+        for (final item in paymentFlowsRaw) {
+          final parsed = _parsePaymentFlow(item.toString());
+          if (parsed == null) {
+            configFindings.add(
+              Finding(
+                FindingLevel.error,
+                'Project configuration',
+                'Invalid payment_flows entry `${item.toString()}`.',
+                id: 'config-invalid-payment-flows',
+                fix:
+                    'Use: external_gateway, cash_on_delivery, offline_payment, no_in_app_payment.',
+              ),
+            );
+          } else {
+            paymentFlows.add(parsed);
+          }
+        }
+      }
+    }
+
     if (configFindings.isNotEmpty) {
       return ConfigLoadResult(
         config: DoctorConfig.empty,
@@ -176,6 +252,8 @@ class DoctorConfigLoader {
         ignore: ignore,
         severityOverrides: overrides,
         approvedHosts: hosts,
+        transactionType: transactionType,
+        paymentFlows: paymentFlows,
       ),
     );
   }
@@ -231,6 +309,27 @@ class DoctorConfigLoader {
       'error' => FindingLevel.error,
       'warning' => FindingLevel.warning,
       'info' => FindingLevel.info,
+      _ => null,
+    };
+  }
+
+  TransactionType? _parseTransactionType(String value) {
+    return switch (value.trim().toLowerCase()) {
+      'digital_goods' => TransactionType.digitalGoods,
+      'subscription' => TransactionType.subscription,
+      'physical_goods' => TransactionType.physicalGoods,
+      'external_payment' => TransactionType.externalPayment,
+      'unknown' => TransactionType.unknown,
+      _ => null,
+    };
+  }
+
+  PaymentFlow? _parsePaymentFlow(String value) {
+    return switch (value.trim().toLowerCase()) {
+      'external_gateway' => PaymentFlow.externalGateway,
+      'cash_on_delivery' => PaymentFlow.cashOnDelivery,
+      'offline_payment' => PaymentFlow.offlinePayment,
+      'no_in_app_payment' => PaymentFlow.noInAppPayment,
       _ => null,
     };
   }

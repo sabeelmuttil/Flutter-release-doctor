@@ -10,6 +10,7 @@ import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
 import 'package:flutter_release_doctor/src/signing_check.dart';
+import 'package:flutter_release_doctor/src/transaction_safety_check.dart';
 
 export 'package:flutter_release_doctor/src/finding.dart';
 
@@ -156,6 +157,10 @@ class ReleaseDoctor {
     await PlatformCompatibilityCheck().run(project, findings);
     await DeepLinkPushCheck().run(project, findings);
     await CicdCheck().run(project, findings);
+    await TransactionSafetyCheck(
+      transactionType: configResult.config.transactionType,
+      paymentFlows: configResult.config.paymentFlows,
+    ).run(project, findings);
 
     final applied = DoctorConfigLoader().apply(configResult.config, findings);
     return DoctorReport(project, applied);

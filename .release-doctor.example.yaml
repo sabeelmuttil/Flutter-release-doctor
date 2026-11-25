@@ -26,3 +26,18 @@ severity_overrides:
 approved_hosts:
   - api.example.com
   - staging.example.com
+
+# How this app monetizes / takes payment. Controls billing safety checks.
+# - digital_goods / subscription: require Play Billing style secure flows
+# - physical_goods: do NOT require Google Play Billing; prefer external payment
+# - external_payment: expect Razorpay/Stripe/etc.
+# - unknown: conservative detection when payment code is present
+transaction_type: physical_goods
+
+# Optional honest declarations for physical_goods / commerce apps.
+# Used when static detection cannot see a gateway SDK (custom WebView, COD, etc.).
+# Declarations are NEVER treated as proof of secure transaction handling.
+# Values: external_gateway | cash_on_delivery | offline_payment | no_in_app_payment
+payment_flows:
+  - external_gateway
+  - cash_on_delivery

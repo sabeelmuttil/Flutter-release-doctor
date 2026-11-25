@@ -13,10 +13,11 @@
 - Platform compatibility / store-readiness (SDK levels, cleartext, privacy manifest)
 - Deep link and push notification readiness
 - CI/CD release pipeline readiness (GitHub Actions)
-- Project-level `.release-doctor.yaml` config (ignore / severity / approved_hosts)
+- Project-level `.release-doctor.yaml` config (ignore / severity / approved_hosts / transaction_type)
+- Offline Google Play Billing / transaction-safety analyzer
 - CI-friendly CLI (`--format`, `--output`, `--fail-on`, `--no-markdown-report`) + JSON reports
 - Terminal + Markdown reports
-- Fixture tests for identity and environment/flavor checks
+- Fixture tests for identity, environment/flavor, and transaction-safety checks
 
 ## Known gaps
 
