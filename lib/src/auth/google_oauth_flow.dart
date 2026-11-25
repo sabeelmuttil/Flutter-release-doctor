@@ -232,10 +232,11 @@ class GoogleOAuthFlow {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final detail = redactStoreApiError(response.body);
       final hint = detail.toLowerCase().contains('client_secret')
-          ? ' Google Desktop OAuth requires the bundled installed-app client '
-              'credential on token exchange (even with PKCE). '
-              'Reinstall/update Flutter Release Doctor, or pass a Desktop '
-              'client JSON via --oauth-client-file for testing.'
+          ? ' Google Desktop OAuth typically requires the installed-app '
+              'client_secret on token exchange (even with PKCE). '
+              'Pass a Desktop client JSON via --oauth-client-file, or set '
+              'GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET '
+              '(keep credentials outside the repository).'
           : '';
       throw GoogleOAuthFlowException(
         'Token exchange failed (HTTP ${response.statusCode}). $detail$hint',

@@ -17,7 +17,7 @@
 - Offline Google Play Billing / transaction-safety analyzer
 - CI-friendly CLI (`--format`, `--output`, `--fail-on`, `--no-markdown-report`) + JSON reports
 - Optional live store verification (`--online` / `--store` / `--no-store-check`) for Google Play + App Store Connect
-- Google OAuth connect (`connect google` / `auth status` / `auth logout google`) with bundled Desktop client, PKCE, OS secure storage
+- Google OAuth connect (`connect google` / `auth status` / `auth logout google`) with PKCE + OS secure storage; Desktop client credentials stay outside the repo (`--oauth-client-file` / env)
 - Versioned offline Google/Apple guideline rule registry (`guidelineVersion`) with full finding attribution
 - Terminal + Markdown reports
 - Fixture tests for identity, environment/flavor, transaction-safety, live-store, OAuth, and guideline registry

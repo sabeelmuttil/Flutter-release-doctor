@@ -22,8 +22,8 @@ class GoogleOAuthClientConfig {
   final String tokenUri;
   final GoogleOAuthClientType clientType;
 
-  /// Optional Desktop client secret. Treated as non-confidential for installed apps.
-  /// Never a service-account private key.
+  /// Optional Desktop client secret for token exchange.
+  /// Never a service-account private key. Never print this value.
   final String? clientSecret;
 
   bool get isServiceAccountShape => false;
@@ -37,21 +37,65 @@ class GoogleOAuthClientConfigException implements Exception {
   String toString() => message;
 }
 
-/// Loads the bundled client, or an optional Desktop client JSON override.
+/// Loads Desktop OAuth client config from file, env, or optional bundled values.
 ///
 /// Rejects Google service-account JSON (private keys) for the OAuth connect flow.
 class GoogleOAuthClientConfigLoader {
+  GoogleOAuthClientConfigLoader({Map<String, String>? environment})
+      : _environmentOverride = environment;
+
+  /// When non-null (including empty), used instead of [Platform.environment].
+  /// Pass `{}` in tests to ignore the host process environment.
+  final Map<String, String>? _environmentOverride;
+
+  Map<String, String> get _env => _environmentOverride ?? Platform.environment;
+
+  /// Resolve order:
+  /// 1. `--oauth-client-file`
+  /// 2. `FLUTTER_RELEASE_DOCTOR_GOOGLE_OAUTH_CLIENT_FILE`
+  /// 3. `GOOGLE_OAUTH_CLIENT_ID` (+ optional `GOOGLE_OAUTH_CLIENT_SECRET`)
+  /// 4. Optional bundled config (normally unset in this repo)
   Future<GoogleOAuthClientConfig> load({String? oauthClientFile}) async {
-    if (oauthClientFile == null || oauthClientFile.trim().isEmpty) {
-      return BundledGoogleOAuthClient.config;
+    final fileArg = oauthClientFile?.trim();
+    if (fileArg != null && fileArg.isNotEmpty) {
+      return loadFromFile(File(fileArg));
     }
-    return loadFromFile(File(oauthClientFile.trim()));
+
+    final envFile =
+        _env['FLUTTER_RELEASE_DOCTOR_GOOGLE_OAUTH_CLIENT_FILE']?.trim();
+    if (envFile != null && envFile.isNotEmpty) {
+      return loadFromFile(File(envFile));
+    }
+
+    final envClientId = _env['GOOGLE_OAUTH_CLIENT_ID']?.trim();
+    if (envClientId != null && envClientId.isNotEmpty) {
+      if (!envClientId.contains('.apps.googleusercontent.com')) {
+        throw GoogleOAuthClientConfigException(
+          'GOOGLE_OAUTH_CLIENT_ID does not look like a Google OAuth client ID.',
+        );
+      }
+      final envSecret = _env['GOOGLE_OAUTH_CLIENT_SECRET']?.trim();
+      return GoogleOAuthClientConfig(
+        clientId: envClientId,
+        clientSecret:
+            (envSecret == null || envSecret.isEmpty) ? null : envSecret,
+        clientType: GoogleOAuthClientType.installed,
+      );
+    }
+
+    final bundled = BundledGoogleOAuthClient.config;
+    if (bundled != null) return bundled;
+
+    throw GoogleOAuthClientConfigException(
+      BundledGoogleOAuthClient.missingCredentialsHelp,
+    );
   }
 
   Future<GoogleOAuthClientConfig> loadFromFile(File file) async {
     if (!await file.exists()) {
       throw GoogleOAuthClientConfigException(
-        'OAuth client file not found: ${file.path}',
+        'OAuth client file not found: ${file.path}\n\n'
+        '${BundledGoogleOAuthClient.missingCredentialsHelp}',
       );
     }
     final raw = await file.readAsString();
@@ -80,9 +124,8 @@ class GoogleOAuthClientConfigLoader {
     if (_looksLikeServiceAccount(map)) {
       throw GoogleOAuthClientConfigException(
         'Refusing service-account JSON for Google OAuth connect. '
-        'Use a Desktop OAuth client configuration (public client ID), '
-        'or run `flutter_release_doctor connect google` with the bundled client. '
-        'Service-account private keys are not accepted for the normal login flow.',
+        'Use a Desktop OAuth client JSON with --oauth-client-file '
+        '(never a service-account private key).',
       );
     }
 

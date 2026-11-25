@@ -32,12 +32,13 @@ class AuthCommands {
     BrowserLauncher? browserLauncher,
     GoogleOAuthClientConfigLoader? clientConfigLoader,
     Directory? workingDirectory,
+    Map<String, String>? environment,
   })  : secureTokenStore = secureTokenStore ?? PlatformSecureTokenStore(),
         doctorHome = doctorHome ?? DoctorHome(),
         http = http ?? DartIoStoreHttpClient(),
         browserLauncher = browserLauncher ?? BrowserLauncher(),
-        clientConfigLoader =
-            clientConfigLoader ?? GoogleOAuthClientConfigLoader(),
+        clientConfigLoader = clientConfigLoader ??
+            GoogleOAuthClientConfigLoader(environment: environment),
         workingDirectory = workingDirectory ?? Directory.current;
 
   final SecureTokenStore secureTokenStore;
@@ -68,11 +69,18 @@ class AuthCommands {
       final clientConfig = await clientConfigLoader.load(
         oauthClientFile: options.oauthClientFile,
       );
-      out.writeln(
-        options.oauthClientFile == null
-            ? 'Using bundled Google Desktop OAuth client.'
-            : 'Using OAuth client override: ${options.oauthClientFile}',
-      );
+      if (options.oauthClientFile != null &&
+          options.oauthClientFile!.trim().isNotEmpty) {
+        out.writeln(
+          'Using Desktop OAuth client file: ${options.oauthClientFile}',
+        );
+      } else {
+        out.writeln(
+          'Using Google Desktop OAuth client from environment / local override '
+          '(no credentials are embedded in the repository).',
+        );
+      }
+      // Client ID is public; never print client_secret or tokens.
       out.writeln('Client ID: ${clientConfig.clientId}');
 
       final packageName = options.packageName?.trim().isNotEmpty == true
@@ -208,12 +216,12 @@ class GoogleAccessTokenResolver {
     GoogleTokenStore? tokenStore,
     GoogleOAuthClientConfig? clientConfig,
   })  : tokenStore = tokenStore ?? GoogleTokenStore(PlatformSecureTokenStore()),
-        clientConfig = clientConfig ?? BundledGoogleOAuthClient.config;
+        clientConfig = clientConfig;
 
   final StoreHttpClient http;
   final Map<String, String> environment;
   final GoogleTokenStore tokenStore;
-  final GoogleOAuthClientConfig clientConfig;
+  final GoogleOAuthClientConfig? clientConfig;
 
   Future<String?> resolve() async {
     final envToken = environment['GOOGLE_PLAY_ACCESS_TOKEN']?.trim();
@@ -222,9 +230,21 @@ class GoogleAccessTokenResolver {
     }
 
     final stored = await tokenStore.read();
-    if (stored != null) {
+    if (stored == null) return null;
+
+    var config = clientConfig ?? BundledGoogleOAuthClient.config;
+    if (config == null) {
+      try {
+        config = await GoogleOAuthClientConfigLoader(environment: environment)
+            .load();
+      } on GoogleOAuthClientConfigException {
+        config = null;
+      }
+    }
+
+    if (config != null) {
       final flow = GoogleOAuthFlow(
-        clientConfig: clientConfig,
+        clientConfig: config,
         tokenStore: tokenStore,
         http: http,
         openBrowser: false,
@@ -232,8 +252,13 @@ class GoogleAccessTokenResolver {
       final refreshed = await flow.refreshIfNeeded(stored);
       final token = refreshed?.accessToken ?? stored.accessToken;
       if (token.isNotEmpty) return token;
+      return null;
     }
 
+    // No OAuth client available to refresh — return non-expired stored token.
+    if (!stored.isExpired && stored.accessToken.isNotEmpty) {
+      return stored.accessToken;
+    }
     return null;
   }
 

@@ -106,6 +106,22 @@ String redactStoreApiError(String raw) {
     RegExp(r'"access_token"\s*:\s*"[^"]*"'),
     '"access_token":"[REDACTED]"',
   );
+  text = text.replaceAll(
+    RegExp(r'"refresh_token"\s*:\s*"[^"]*"'),
+    '"refresh_token":"[REDACTED]"',
+  );
+  text = text.replaceAll(
+    RegExp(r'"client_secret"\s*:\s*"[^"]*"'),
+    '"client_secret":"[REDACTED]"',
+  );
+  text = text.replaceAll(
+    RegExp(r'client_secret=[^&\s]+', caseSensitive: false),
+    'client_secret=[REDACTED]',
+  );
+  text = text.replaceAll(
+    RegExp(r'refresh_token=[^&\s]+', caseSensitive: false),
+    'refresh_token=[REDACTED]',
+  );
   if (text.length > 240) {
     text = '${text.substring(0, 240)}…';
   }

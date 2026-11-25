@@ -351,12 +351,13 @@ Check options:
 
 Connect google options:
   --no-browser                     Print the authorization URL (headless)
-  --oauth-client-file <path>       Optional Desktop OAuth client JSON override
+  --oauth-client-file <path>       Desktop OAuth client JSON (required unless env set)
   --package <applicationId>        Optional package for Play Console access probe
 
 Defaults:
   - offline only (no network / no login required for check)
-  - Google login uses the bundled Desktop OAuth client + OS secure storage
+  - Google OAuth credentials stay outside the repo (file or env)
+  - tokens stored in OS secure storage after connect
   - console output on stdout
   - writes release-doctor-report.md in the scanned project
   - exit 1 when ERROR findings exist

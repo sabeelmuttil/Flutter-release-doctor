@@ -1,11 +1,11 @@
 # Active context
 
-Offline store-guideline risk scanner (versioned registry `2026.1`):
+Push Protection remediation complete: no real Google OAuth client ID/secret in tracked source.
 
-- Google Play + Apple App Review rules offline — no Play/ASC API required
-- Findings include platform, guidelineReference, ruleVersion, evidence, fix
-- Reports expose `guidelineVersion`; MANUAL REVIEW section for unprovable rules
-- Wording: potential rejection risk / manual review required — not an approval certificate
-- Live store APIs remain optional behind `--online`
+- `BundledGoogleOAuthClient.clientId` / `clientSecret` are null; `config` is null
+- Credentials via `--oauth-client-file`, `FLUTTER_RELEASE_DOCTOR_GOOGLE_OAUTH_CLIENT_FILE`, or `GOOGLE_OAUTH_CLIENT_ID`/`SECRET`
+- Missing config → clear help pointing at `--oauth-client-file /secure/path/client_secret_xxx.json`
+- Service-account JSON rejected for Desktop OAuth connect
+- Secrets/tokens never printed; redaction covers client_secret / refresh_token
 
-Prior: Google OAuth `connect google` with bundled Desktop client + OS secure storage.
+Prior: Offline store-guideline risk scanner (`guidelineVersion` 2026.1) + optional `--online` live store checks.
