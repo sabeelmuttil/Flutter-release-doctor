@@ -195,6 +195,15 @@ transaction_type: digital_goods
 
 payment_flows:
   - external_gateway
+
+store_compliance:
+  privacy_policy_url: https://example.com/privacy
+  account_required: true
+  account_deletion_url: https://example.com/delete-account
+  reviewer_access:
+    demo_account_provided: false
+  user_generated_content: false
+  uses_tracking: false
 ```
 
 | Key | Purpose |
@@ -204,6 +213,7 @@ payment_flows:
 | `approved_hosts` | Hosts allowed for hard-coded / security URL checks. |
 | `transaction_type` | `digital_goods`, `subscription`, `physical_goods`, `external_payment`, or `unknown`. |
 | `payment_flows` | Optional declarations: `external_gateway`, `cash_on_delivery`, `offline_payment`, `no_in_app_payment`. |
+| `store_compliance` | Optional Play/App Store guideline *risk* declarations (privacy URL, account deletion, tracking, UGC, reviewer access). |
 
 ### Transaction / billing safety (offline)
 
@@ -238,6 +248,16 @@ Example for a premium subscription app:
 ```yaml
 transaction_type: subscription
 ```
+
+### Store guideline risk (offline)
+
+Release Doctor emits **risk signals** for Google Play and Apple App Store policies. It is **not** a guaranteed-compliance checker and never claims Data Safety or App Privacy declarations are complete. Every store finding names the relevant guideline/policy area.
+
+Reports include this disclaimer (console, Markdown, and JSON `disclaimer` field):
+
+> Automated checks identify risk signals; store approval and legal compliance require human review.
+
+Notable finding IDs: `play-data-safety-review`, `play-privacy-policy-missing`, `apple-privacy-policy-missing`, `apple-account-deletion-missing`, `apple-sign-in-with-apple-review`, `apple-att-review`, `apple-reviewer-access-missing`.
 
 Each finding has a stable ID shown in terminal and Markdown output, for example:
 

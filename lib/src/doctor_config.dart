@@ -21,6 +21,33 @@ enum PaymentFlow {
   noInAppPayment,
 }
 
+/// Optional store-guideline declarations (risk signals only; not compliance).
+class StoreComplianceConfig {
+  const StoreComplianceConfig({
+    this.privacyPolicyUrl,
+    this.accountRequired,
+    this.accountDeletionUrl,
+    this.demoAccountProvided,
+    this.userGeneratedContent,
+    this.usesTracking,
+  });
+
+  final String? privacyPolicyUrl;
+  final bool? accountRequired;
+  final String? accountDeletionUrl;
+  final bool? demoAccountProvided;
+  final bool? userGeneratedContent;
+  final bool? usesTracking;
+
+  bool get hasPrivacyPolicyUrl =>
+      privacyPolicyUrl != null && privacyPolicyUrl!.trim().isNotEmpty;
+
+  bool get hasAccountDeletionUrl =>
+      accountDeletionUrl != null && accountDeletionUrl!.trim().isNotEmpty;
+
+  static const empty = StoreComplianceConfig();
+}
+
 class DoctorConfig {
   const DoctorConfig({
     this.version = 1,
@@ -29,6 +56,7 @@ class DoctorConfig {
     this.approvedHosts = const {},
     this.transactionType = TransactionType.unknown,
     this.paymentFlows = const {},
+    this.storeCompliance = StoreComplianceConfig.empty,
   });
 
   final int version;
@@ -37,6 +65,7 @@ class DoctorConfig {
   final Set<String> approvedHosts;
   final TransactionType transactionType;
   final Set<PaymentFlow> paymentFlows;
+  final StoreComplianceConfig storeCompliance;
 
   static const empty = DoctorConfig();
 }
@@ -234,6 +263,29 @@ class DoctorConfigLoader {
       }
     }
 
+    var storeCompliance = StoreComplianceConfig.empty;
+    final storeRaw = map['store_compliance'];
+    if (storeRaw != null) {
+      if (storeRaw is! Map && storeRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_compliance` must be a mapping/object.',
+            id: 'config-invalid-store-compliance',
+            fix:
+                'See `.release-doctor.example.yaml` for store_compliance keys.',
+          ),
+        );
+      } else {
+        final storeMap = _asStringKeyedMap(storeRaw);
+        final parsed = _parseStoreCompliance(storeMap, configFindings);
+        if (parsed != null) {
+          storeCompliance = parsed;
+        }
+      }
+    }
+
     if (configFindings.isNotEmpty) {
       return ConfigLoadResult(
         config: DoctorConfig.empty,
@@ -254,8 +306,126 @@ class DoctorConfigLoader {
         approvedHosts: hosts,
         transactionType: transactionType,
         paymentFlows: paymentFlows,
+        storeCompliance: storeCompliance,
       ),
     );
+  }
+
+  StoreComplianceConfig? _parseStoreCompliance(
+    Map<String, dynamic> map,
+    List<Finding> configFindings,
+  ) {
+    String? privacyPolicyUrl;
+    final privacyRaw = map['privacy_policy_url'];
+    if (privacyRaw != null) {
+      privacyPolicyUrl = privacyRaw.toString().trim();
+    }
+
+    bool? accountRequired;
+    final accountRaw = map['account_required'];
+    if (accountRaw != null) {
+      accountRequired = _parseBool(accountRaw);
+      if (accountRequired == null) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_compliance.account_required` must be a boolean.',
+            id: 'config-invalid-store-compliance',
+          ),
+        );
+        return null;
+      }
+    }
+
+    String? accountDeletionUrl;
+    final deletionRaw = map['account_deletion_url'];
+    if (deletionRaw != null) {
+      accountDeletionUrl = deletionRaw.toString().trim();
+    }
+
+    bool? demoAccountProvided;
+    final reviewerRaw = map['reviewer_access'];
+    if (reviewerRaw != null) {
+      if (reviewerRaw is! Map && reviewerRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_compliance.reviewer_access` must be a mapping.',
+            id: 'config-invalid-store-compliance',
+          ),
+        );
+        return null;
+      }
+      final reviewerMap = _asStringKeyedMap(reviewerRaw);
+      final demoRaw = reviewerMap['demo_account_provided'];
+      if (demoRaw != null) {
+        demoAccountProvided = _parseBool(demoRaw);
+        if (demoAccountProvided == null) {
+          configFindings.add(
+            const Finding(
+              FindingLevel.error,
+              'Project configuration',
+              '`store_compliance.reviewer_access.demo_account_provided` must be a boolean.',
+              id: 'config-invalid-store-compliance',
+            ),
+          );
+          return null;
+        }
+      }
+    }
+
+    bool? userGeneratedContent;
+    final ugcRaw = map['user_generated_content'];
+    if (ugcRaw != null) {
+      userGeneratedContent = _parseBool(ugcRaw);
+      if (userGeneratedContent == null) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_compliance.user_generated_content` must be a boolean.',
+            id: 'config-invalid-store-compliance',
+          ),
+        );
+        return null;
+      }
+    }
+
+    bool? usesTracking;
+    final trackingRaw = map['uses_tracking'];
+    if (trackingRaw != null) {
+      usesTracking = _parseBool(trackingRaw);
+      if (usesTracking == null) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_compliance.uses_tracking` must be a boolean.',
+            id: 'config-invalid-store-compliance',
+          ),
+        );
+        return null;
+      }
+    }
+
+    return StoreComplianceConfig(
+      privacyPolicyUrl: privacyPolicyUrl,
+      accountRequired: accountRequired,
+      accountDeletionUrl: accountDeletionUrl,
+      demoAccountProvided: demoAccountProvided,
+      userGeneratedContent: userGeneratedContent,
+      usesTracking: usesTracking,
+    );
+  }
+
+  bool? _parseBool(dynamic value) {
+    if (value is bool) return value;
+    final text = value.toString().trim().toLowerCase();
+    if (text == 'true') return true;
+    if (text == 'false') return false;
+    return null;
   }
 
   /// Applies ignore rules, then severity overrides, to [findings].

@@ -10,6 +10,7 @@ import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
 import 'package:flutter_release_doctor/src/signing_check.dart';
+import 'package:flutter_release_doctor/src/store_compliance_check.dart';
 import 'package:flutter_release_doctor/src/transaction_safety_check.dart';
 
 export 'package:flutter_release_doctor/src/finding.dart';
@@ -19,6 +20,8 @@ class DoctorReport {
 
   final Directory project;
   final List<Finding> findings;
+
+  static const storeRiskDisclaimer = StoreComplianceCheck.disclaimer;
 
   bool get hasErrors =>
       findings.any((finding) => finding.level == FindingLevel.error);
@@ -44,7 +47,8 @@ class DoctorReport {
 
   String toConsole() {
     final buffer = StringBuffer('Flutter Release Doctor — ${project.path}\n');
-    buffer.writeln('Release score: $score/100\n');
+    buffer.writeln('Release score: $score/100');
+    buffer.writeln('Disclaimer: $storeRiskDisclaimer\n');
     for (final finding in findings) {
       final icon = switch (finding.level) {
         FindingLevel.error => 'ERROR',
@@ -67,7 +71,8 @@ class DoctorReport {
   String toMarkdown() {
     final buffer = StringBuffer('# Flutter Release Doctor report\n\n');
     buffer.writeln('**Project:** `${project.path}`  ');
-    buffer.writeln('**Release score:** $score/100\n');
+    buffer.writeln('**Release score:** $score/100  ');
+    buffer.writeln('**Disclaimer:** $storeRiskDisclaimer\n');
     for (final level in FindingLevel.values) {
       final items = findings.where((finding) => finding.level == level);
       if (items.isEmpty) continue;
@@ -98,6 +103,7 @@ class DoctorReport {
       'schemaVersion': jsonSchemaVersion,
       'projectPath': project.path,
       'score': score,
+      'disclaimer': storeRiskDisclaimer,
       'summary': {
         'error': counts['error'] ?? 0,
         'warning': counts['warning'] ?? 0,
@@ -160,6 +166,10 @@ class ReleaseDoctor {
     await TransactionSafetyCheck(
       transactionType: configResult.config.transactionType,
       paymentFlows: configResult.config.paymentFlows,
+    ).run(project, findings);
+    await StoreComplianceCheck(
+      storeCompliance: configResult.config.storeCompliance,
+      transactionType: configResult.config.transactionType,
     ).run(project, findings);
 
     final applied = DoctorConfigLoader().apply(configResult.config, findings);

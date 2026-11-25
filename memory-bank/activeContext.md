@@ -1,10 +1,9 @@
 # Active context
 
-Insecure HTTP scanner false positives fixed for Xcode/XML metadata:
+Store Guideline Risk Check landed (offline risk scanner, not compliance):
 
-- Skip `ios/**/*.xcworkspace/**`, `ios/Pods/**`, `build/**`, `.dart_tool/**`, `.git/**`
-- Ignore XML/plist DOCTYPE, xmlns, Apple DTD, and schema HTTP URLs
-- Still warn on real HTTP in Dart, `.env`, JSON/YAML, and plist string values
-- localhost / `10.0.2.2` unchanged
+- `store_compliance` YAML: privacy_policy_url, account_required, account_deletion_url, reviewer_access, user_generated_content, uses_tracking
+- Play + Apple risk findings with guideline references; disclaimer in console/Markdown/JSON
+- Never claims Data Safety / App Privacy completeness; no network calls
 
-Prior: Firebase client-config secret exclusions; physical-goods payment flows; transaction-type summary.
+Prior: insecure-HTTP XML/Xcode exclusions; Firebase client-config secret exclusions; physical-goods payment flows.
