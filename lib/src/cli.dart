@@ -23,6 +23,7 @@ class CliOptions {
     this.failOn = FailOn.error,
     this.writeMarkdownReport = true,
     this.help = false,
+    this.liveStore = LiveStoreOptions.offline,
   });
 
   final String projectPath;
@@ -31,6 +32,7 @@ class CliOptions {
   final FailOn failOn;
   final bool writeMarkdownReport;
   final bool help;
+  final LiveStoreOptions liveStore;
 }
 
 const protectedOutputNames = <String>{
@@ -66,6 +68,9 @@ CliOptions parseCliArguments(List<String> arguments) {
   var failOn = FailOn.error;
   var writeMarkdownReport = true;
   String? projectPath;
+  var online = false;
+  var store = StoreTarget.both;
+  var storeCheckEnabled = true;
 
   for (var i = 1; i < arguments.length; i++) {
     final arg = arguments[i];
@@ -74,6 +79,25 @@ CliOptions parseCliArguments(List<String> arguments) {
     }
     if (arg == '--no-markdown-report') {
       writeMarkdownReport = false;
+      continue;
+    }
+    if (arg == '--online') {
+      online = true;
+      continue;
+    }
+    if (arg == '--no-store-check') {
+      storeCheckEnabled = false;
+      continue;
+    }
+    if (arg == '--store') {
+      if (i + 1 >= arguments.length) {
+        throw CliUsageException('--store requires a value: google|apple|both');
+      }
+      store = _parseStoreTarget(arguments[++i]);
+      continue;
+    }
+    if (arg.startsWith('--store=')) {
+      store = _parseStoreTarget(arg.substring('--store='.length));
       continue;
     }
     if (arg == '--format') {
@@ -126,6 +150,11 @@ CliOptions parseCliArguments(List<String> arguments) {
     outputPath: outputPath,
     failOn: failOn,
     writeMarkdownReport: writeMarkdownReport,
+    liveStore: LiveStoreOptions(
+      online: online,
+      store: store,
+      enabled: storeCheckEnabled,
+    ),
   );
 }
 
@@ -151,6 +180,17 @@ FailOn _parseFailOn(String value) {
   };
 }
 
+StoreTarget _parseStoreTarget(String value) {
+  return switch (value.trim().toLowerCase()) {
+    'google' => StoreTarget.google,
+    'apple' => StoreTarget.apple,
+    'both' => StoreTarget.both,
+    _ => throw CliUsageException(
+        'Invalid --store `$value`. Use google|apple|both.',
+      ),
+  };
+}
+
 String cliHelpText() => '''Flutter Release Doctor
 
 Usage:
@@ -161,9 +201,13 @@ Options:
   --output <file-path>             Write the selected format to a file
   --fail-on error|warning|never    Exit policy (default: error)
   --no-markdown-report             Do not write release-doctor-report.md
+  --online                         Enable optional live store API checks
+  --store google|apple|both        Live store target (default: both)
+  --no-store-check                 Skip live store verification even with --online
   -h, --help                       Show this help
 
 Defaults:
+  - offline only (no network calls)
   - console output on stdout
   - writes release-doctor-report.md in the scanned project
   - exit 1 when ERROR findings exist''';
@@ -183,7 +227,10 @@ Future<int> runCheckCommand(
   }
 
   final project = Directory(options.projectPath).absolute;
-  final report = await ReleaseDoctor().check(project);
+  final report = await ReleaseDoctor().check(
+    project,
+    liveStore: options.liveStore,
+  );
   final rendered = _render(report, options.format);
 
   if (options.outputPath != null) {

@@ -24,7 +24,7 @@ enum FindingLevel {
 
 enum FindingConfidence { high, medium, low }
 
-enum FindingSource { staticAnalysis, projectConfig, manualReview }
+enum FindingSource { staticAnalysis, projectConfig, manualReview, liveApi }
 
 class Finding {
   const Finding(
@@ -143,6 +143,7 @@ class Finding {
           FindingSource.staticAnalysis => 'static-analysis',
           FindingSource.projectConfig => 'project-config',
           FindingSource.manualReview => 'manual-review',
+          FindingSource.liveApi => 'live-api',
         },
         'guideline': guideline,
         'evidenceSummary': evidenceSummary,

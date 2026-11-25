@@ -67,3 +67,17 @@ store_profile:
   uses_android_app_links: false
   ci_required: false
   reviewer_demo_account: true
+
+# Optional identifiers for live store API checks (requires CLI `--online`).
+# Credentials are NEVER read from this file — only from environment / CI secrets:
+#   Google: GOOGLE_PLAY_ACCESS_TOKEN or GOOGLE_PLAY_SERVICE_ACCOUNT_FILE /
+#           GOOGLE_APPLICATION_CREDENTIALS
+#   Apple:  APP_STORE_CONNECT_ACCESS_TOKEN, or APP_STORE_CONNECT_ISSUER_ID +
+#           APP_STORE_CONNECT_KEY_ID + APP_STORE_CONNECT_PRIVATE_KEY_PATH
+#           (or APP_STORE_CONNECT_PRIVATE_KEY)
+# Missing credentials emit INFO / manual review and do not reduce the score.
+store_integrations:
+  google_play:
+    package_name: com.example.app
+  app_store:
+    bundle_id: com.example.app

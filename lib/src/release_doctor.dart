@@ -10,11 +10,15 @@ import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
 import 'package:flutter_release_doctor/src/signing_check.dart';
+import 'package:flutter_release_doctor/src/live_store/live_store_options.dart';
+import 'package:flutter_release_doctor/src/live_store/live_store_verification.dart';
+import 'package:flutter_release_doctor/src/live_store/store_http.dart';
 import 'package:flutter_release_doctor/src/store_compliance_check.dart';
 import 'package:flutter_release_doctor/src/store_profile_policy.dart';
 import 'package:flutter_release_doctor/src/transaction_safety_check.dart';
 
 export 'package:flutter_release_doctor/src/finding.dart';
+export 'package:flutter_release_doctor/src/live_store/live_store_options.dart';
 
 class DoctorReport {
   const DoctorReport(this.project, this.findings);
@@ -23,6 +27,15 @@ class DoctorReport {
   final List<Finding> findings;
 
   static const storeRiskDisclaimer = StoreComplianceCheck.disclaimer;
+  static const liveStoreDisclaimer = LiveStoreVerification.disclaimer;
+
+  bool get hasLiveApiFindings =>
+      findings.any((finding) => finding.source == FindingSource.liveApi);
+
+  String get disclaimer {
+    if (!hasLiveApiFindings) return storeRiskDisclaimer;
+    return '$storeRiskDisclaimer $liveStoreDisclaimer';
+  }
 
   bool get hasErrors =>
       findings.any((finding) => finding.level == FindingLevel.error);
@@ -52,7 +65,7 @@ class DoctorReport {
   String toConsole() {
     final buffer = StringBuffer('Flutter Release Doctor — ${project.path}\n');
     buffer.writeln('Release score: $score/100');
-    buffer.writeln('Disclaimer: $storeRiskDisclaimer\n');
+    buffer.writeln('Disclaimer: $disclaimer\n');
     for (final finding in findings) {
       buffer.writeln(
         '[${finding.levelLabel}] [${finding.id}] ${finding.title}: ${finding.detail}',
@@ -79,7 +92,7 @@ class DoctorReport {
     final buffer = StringBuffer('# Flutter Release Doctor report\n\n');
     buffer.writeln('**Project:** `${project.path}`  ');
     buffer.writeln('**Release score:** $score/100  ');
-    buffer.writeln('**Disclaimer:** $storeRiskDisclaimer\n');
+    buffer.writeln('**Disclaimer:** $disclaimer\n');
     for (final level in FindingLevel.values) {
       final items = findings.where((finding) => finding.level == level);
       if (items.isEmpty) continue;
@@ -123,7 +136,7 @@ class DoctorReport {
       'schemaVersion': jsonSchemaVersion,
       'projectPath': project.path,
       'score': score,
-      'disclaimer': storeRiskDisclaimer,
+      'disclaimer': disclaimer,
       'summary': {
         'error': counts['error'] ?? 0,
         'warning': counts['warning'] ?? 0,
@@ -139,6 +152,7 @@ class DoctorReport {
         FindingSource.staticAnalysis => 'static-analysis',
         FindingSource.projectConfig => 'project-config',
         FindingSource.manualReview => 'manual-review',
+        FindingSource.liveApi => 'live-api',
       };
 
   String toJsonString({bool pretty = true}) {
@@ -149,7 +163,16 @@ class DoctorReport {
 }
 
 class ReleaseDoctor {
-  Future<DoctorReport> check(Directory project) async {
+  /// Runs offline release checks by default.
+  ///
+  /// Live store API verification runs only when [liveStore].shouldRun is true
+  /// (requires CLI `--online` and not `--no-store-check`).
+  Future<DoctorReport> check(
+    Directory project, {
+    LiveStoreOptions liveStore = LiveStoreOptions.offline,
+    StoreHttpClient? storeHttp,
+    Map<String, String>? environment,
+  }) async {
     final configResult = await DoctorConfigLoader().load(project);
     final findings = <Finding>[...configResult.findings];
     final approvedHosts = configResult.config.approvedHosts;
@@ -204,6 +227,14 @@ class ReleaseDoctor {
       transactionType: configResult.config.transactionType,
       storeProfile: configResult.config.storeProfile,
     ).run(project, findings);
+
+    // Live API checks are separate from offline static findings and never run
+    // unless explicitly enabled via --online.
+    await LiveStoreVerification(
+      options: liveStore,
+      http: storeHttp,
+      environment: environment,
+    ).run(project, configResult.config, findings);
 
     final profiled = StoreProfilePolicy().apply(configResult.config, findings);
     final applied = DoctorConfigLoader().apply(configResult.config, profiled);

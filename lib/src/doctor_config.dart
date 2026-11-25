@@ -107,6 +107,19 @@ class StoreProfile {
   static const empty = StoreProfile();
 }
 
+/// Optional identifiers for live store API checks (credentials stay in env/CI).
+class StoreIntegrationsConfig {
+  const StoreIntegrationsConfig({
+    this.googlePlayPackageName,
+    this.appStoreBundleId,
+  });
+
+  final String? googlePlayPackageName;
+  final String? appStoreBundleId;
+
+  static const empty = StoreIntegrationsConfig();
+}
+
 class DoctorConfig {
   const DoctorConfig({
     this.version = 1,
@@ -117,6 +130,7 @@ class DoctorConfig {
     this.paymentFlows = const {},
     this.storeCompliance = StoreComplianceConfig.empty,
     this.storeProfile = StoreProfile.empty,
+    this.storeIntegrations = StoreIntegrationsConfig.empty,
   });
 
   final int version;
@@ -127,6 +141,7 @@ class DoctorConfig {
   final Set<PaymentFlow> paymentFlows;
   final StoreComplianceConfig storeCompliance;
   final StoreProfile storeProfile;
+  final StoreIntegrationsConfig storeIntegrations;
 
   static const empty = DoctorConfig();
 }
@@ -369,6 +384,29 @@ class DoctorConfigLoader {
       }
     }
 
+    var storeIntegrations = StoreIntegrationsConfig.empty;
+    final integrationsRaw = map['store_integrations'];
+    if (integrationsRaw != null) {
+      if (integrationsRaw is! Map && integrationsRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_integrations` must be a mapping/object.',
+            id: 'config-invalid-store-integrations',
+            fix:
+                'See `.release-doctor.example.yaml` for store_integrations keys.',
+          ),
+        );
+      } else {
+        final integrationsMap = _asStringKeyedMap(integrationsRaw);
+        final parsed = _parseStoreIntegrations(integrationsMap, configFindings);
+        if (parsed != null) {
+          storeIntegrations = parsed;
+        }
+      }
+    }
+
     if (configFindings.isNotEmpty) {
       return ConfigLoadResult(
         config: DoctorConfig.empty,
@@ -391,7 +429,62 @@ class DoctorConfigLoader {
         paymentFlows: paymentFlows,
         storeCompliance: storeCompliance,
         storeProfile: storeProfile,
+        storeIntegrations: storeIntegrations,
       ),
+    );
+  }
+
+  StoreIntegrationsConfig? _parseStoreIntegrations(
+    Map<String, dynamic> map,
+    List<Finding> configFindings,
+  ) {
+    String? googlePackage;
+    final googleRaw = map['google_play'];
+    if (googleRaw != null) {
+      if (googleRaw is! Map && googleRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_integrations.google_play` must be a mapping/object.',
+            id: 'config-invalid-store-integrations',
+          ),
+        );
+        return null;
+      }
+      final googleMap = _asStringKeyedMap(googleRaw);
+      final packageRaw = googleMap['package_name'];
+      if (packageRaw != null) {
+        final value = packageRaw.toString().trim();
+        if (value.isNotEmpty) googlePackage = value;
+      }
+    }
+
+    String? appleBundle;
+    final appleRaw = map['app_store'];
+    if (appleRaw != null) {
+      if (appleRaw is! Map && appleRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_integrations.app_store` must be a mapping/object.',
+            id: 'config-invalid-store-integrations',
+          ),
+        );
+        return null;
+      }
+      final appleMap = _asStringKeyedMap(appleRaw);
+      final bundleRaw = appleMap['bundle_id'];
+      if (bundleRaw != null) {
+        final value = bundleRaw.toString().trim();
+        if (value.isNotEmpty) appleBundle = value;
+      }
+    }
+
+    return StoreIntegrationsConfig(
+      googlePlayPackageName: googlePackage,
+      appStoreBundleId: appleBundle,
     );
   }
 
