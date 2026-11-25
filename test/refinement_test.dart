@@ -261,11 +261,20 @@ class Api {
 ''');
 
     final report = await ReleaseDoctor().check(project);
-    final finding =
-        report.findings.singleWhere((f) => f.id == 'ios-custom-url-scheme');
-    expect(finding.level, FindingLevel.warning);
-    expect(finding.detail.toLowerCase(), contains('unresolved'));
-    expect(finding.file, contains('Info.plist'));
+    final schemeFindings =
+        report.findings.where((f) => f.id == 'ios-custom-url-scheme').toList();
+    expect(
+      schemeFindings.any((f) => f.level == FindingLevel.warning),
+      isTrue,
+    );
+    expect(
+      schemeFindings.any((f) => f.level == FindingLevel.manualReview),
+      isTrue,
+    );
+    final warning =
+        schemeFindings.singleWhere((f) => f.level == FindingLevel.warning);
+    expect(warning.detail.toLowerCase(), contains('unresolved'));
+    expect(warning.file, contains('Info.plist'));
     expect(report.toConsole(), isNot(contains('REVERSED_CLIENT_ID_KEY)')));
   });
 

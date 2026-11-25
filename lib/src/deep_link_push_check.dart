@@ -8,6 +8,17 @@ import 'package:flutter_release_doctor/src/finding.dart';
 /// Never makes network calls and never reports tokens, keys, APNs IDs, or
 /// Firebase secrets.
 class DeepLinkPushCheck {
+  DeepLinkPushCheck({
+    this.usesUniversalLinks,
+    this.usesAndroidAppLinks,
+  });
+
+  /// When false, associated-domain warnings are not inferred from URL schemes.
+  final bool? usesUniversalLinks;
+
+  /// When false, inferred App Links host/autoVerify issues are INFO/MANUAL REVIEW.
+  final bool? usesAndroidAppLinks;
+
   Future<void> run(Directory project, List<Finding> findings) async {
     await _checkAndroidDeepLinks(project, findings);
     await _checkIosDeepLinks(project, findings);
@@ -48,11 +59,11 @@ class DeepLinkPushCheck {
         final line = Evidence.lineOfOffset(text, filter.start);
         if (concreteHosts.isEmpty) {
           findings.add(
-            Finding(
-              FindingLevel.warning,
-              'Android App Links host',
-              'An HTTPS app-link intent filter has no host or uses an unresolved placeholder.',
+            _androidAppLinksFinding(
               id: 'android-app-links-host',
+              title: 'Android App Links host',
+              detail:
+                  'An HTTPS app-link intent filter has no host or uses an unresolved placeholder.',
               file: relative,
               line: line,
               fix:
@@ -61,11 +72,11 @@ class DeepLinkPushCheck {
           );
         } else if (!filter.autoVerify) {
           findings.add(
-            Finding(
-              FindingLevel.warning,
-              'Android App Links autoVerify',
-              'An HTTPS deep-link intent filter is present but android:autoVerify="true" is missing.',
+            _androidAppLinksFinding(
               id: 'android-app-links-autoverify',
+              title: 'Android App Links autoVerify',
+              detail:
+                  'An HTTPS deep-link intent filter is present but android:autoVerify="true" is missing.',
               file: relative,
               line: line,
               fix:
@@ -143,11 +154,6 @@ class DeepLinkPushCheck {
     if (schemes.isNotEmpty) {
       final empty = schemes.where((s) => s.trim().isEmpty).isNotEmpty;
       final nonEmpty = schemes.where((s) => s.trim().isNotEmpty).toList();
-      final unresolved = nonEmpty
-          .where(_looksLikeVariableScheme)
-          .map(_redactScheme)
-          .toSet()
-          .toList();
       final concrete =
           nonEmpty.where((s) => !_looksLikeVariableScheme(s)).toList();
       final duplicates = <String>{};
@@ -166,28 +172,70 @@ class DeepLinkPushCheck {
         if (idx >= 0) plistLine = Evidence.lineOfOffset(text, idx);
       }
 
-      if (empty || duplicates.isNotEmpty || unresolved.isNotEmpty) {
+      final unresolvedRaw = nonEmpty.where(_looksLikeVariableScheme).toList();
+      final sdkUnresolved = <String>[];
+      final appUnresolved = <String>[];
+      final sdkSources = <String>{};
+      for (final scheme in unresolvedRaw) {
+        final source = _paymentOrAuthSdkSource(scheme);
+        if (source != null) {
+          sdkUnresolved.add(_redactScheme(scheme));
+          sdkSources.add(source);
+        } else {
+          appUnresolved.add(_redactScheme(scheme));
+        }
+      }
+
+      if (empty || duplicates.isNotEmpty || appUnresolved.isNotEmpty) {
         final parts = <String>[
           if (empty) 'one or more URL schemes are empty',
           if (duplicates.isNotEmpty)
             'duplicated scheme(s): ${duplicates.join(', ')}',
-          if (unresolved.isNotEmpty)
-            'unresolved variable scheme(s): ${unresolved.join(', ')}',
+          if (appUnresolved.isNotEmpty)
+            'unresolved variable scheme(s): ${appUnresolved.join(', ')}',
         ];
         findings.add(
           Finding(
             FindingLevel.warning,
             'iOS custom URL scheme',
-            'CFBundleURLTypes issue: ${parts.join('; ')}.',
+            'CFBundleURLTypes app-owned configuration issue: ${parts.join('; ')}.',
             id: 'ios-custom-url-scheme',
             file: plistRel,
             line: plistLine,
-            classification: unresolved.isNotEmpty ? 'unresolved-scheme' : null,
+            classification:
+                appUnresolved.isNotEmpty ? 'unresolved-scheme' : null,
+            confidence: FindingConfidence.high,
+            source: FindingSource.staticAnalysis,
+            evidenceSummary: 'App-owned CFBundleURLSchemes configuration',
             fix:
                 'Use unique, non-empty, fully resolved URL schemes in Info.plist CFBundleURLTypes.',
           ),
         );
-      } else {
+      }
+
+      if (sdkUnresolved.isNotEmpty) {
+        findings.add(
+          Finding(
+            FindingLevel.manualReview,
+            'iOS custom URL scheme',
+            'Unresolved URL scheme variable(s) appear to come from payment/auth SDK configuration '
+                '(${sdkSources.join(', ')}): ${sdkUnresolved.join(', ')}. '
+                'Low-confidence — verify build-time substitution; not treated as an app-owned deep-link defect.',
+            id: 'ios-custom-url-scheme',
+            file: plistRel,
+            line: plistLine,
+            classification: 'sdk-unresolved-scheme',
+            confidence: FindingConfidence.low,
+            source: FindingSource.staticAnalysis,
+            evidenceSummary: 'SDK/config source: ${sdkSources.join(', ')}',
+          ),
+        );
+      }
+
+      if (!empty &&
+          duplicates.isEmpty &&
+          appUnresolved.isEmpty &&
+          sdkUnresolved.isEmpty) {
         findings.add(
           Finding(
             FindingLevel.passed,
@@ -205,44 +253,103 @@ class DeepLinkPushCheck {
         .where((d) => d.toLowerCase().startsWith('applinks:'))
         .toList();
     if (applinks.isNotEmpty) {
-      final unresolved = applinks.any((d) => _isPlaceholder(d));
-      if (unresolved) {
+      if (usesUniversalLinks == false) {
         findings.add(
-          const Finding(
-            FindingLevel.warning,
+          Finding(
+            FindingLevel.manualReview,
             'iOS associated domains',
-            'Associated domains include applinks entries that look unresolved or use placeholders.',
+            'Concrete applinks: entitlement configuration is present, but '
+                'store_profile.uses_universal_links=false. Universal Links are disabled by project profile — '
+                'remove unused applinks entries or set uses_universal_links: true if you ship them.',
             id: 'ios-associated-domains',
-            fix:
-                'Set concrete applinks: domains in Runner entitlements (domain values only; no secrets).',
+            confidence: FindingConfidence.low,
+            source: FindingSource.projectConfig,
+            evidenceSummary:
+                'applinks entitlement present; Universal Links disabled by profile',
           ),
         );
       } else {
-        final domains = applinks
-            .map((d) => d.substring(d.indexOf(':') + 1))
-            .where((d) => d.isNotEmpty)
-            .toList();
-        findings.add(
-          Finding(
-            FindingLevel.passed,
-            'iOS associated domains',
-            'Associated domains include applinks: ${domains.join(', ')}.',
-            id: 'ios-associated-domains',
-          ),
-        );
+        final unresolved = applinks.any((d) => _isPlaceholder(d));
+        if (unresolved) {
+          findings.add(
+            const Finding(
+              FindingLevel.warning,
+              'iOS associated domains',
+              'Associated domains include applinks entries that look unresolved or use placeholders.',
+              id: 'ios-associated-domains',
+              confidence: FindingConfidence.medium,
+              source: FindingSource.staticAnalysis,
+              fix:
+                  'Set concrete applinks: domains in Runner entitlements (domain values only; no secrets).',
+            ),
+          );
+        } else {
+          final domains = applinks
+              .map((d) => d.substring(d.indexOf(':') + 1))
+              .where((d) => d.isNotEmpty)
+              .toList();
+          findings.add(
+            Finding(
+              FindingLevel.passed,
+              'iOS associated domains',
+              'Associated domains include applinks: ${domains.join(', ')}.',
+              id: 'ios-associated-domains',
+            ),
+          );
+        }
       }
-    } else if (_hasConcreteUniversalLinkEvidence(entitlementsText)) {
+    } else if (usesUniversalLinks != false &&
+        _hasApplinksOrientedEvidence(entitlementsText)) {
+      // Only warn when Universal Links are in-scope and applinks are missing.
+      // Do not warn merely because URL schemes or unrelated associated-domain
+      // keys (e.g. webcredentials) exist when uses_universal_links is false.
       findings.add(
         const Finding(
           FindingLevel.warning,
           'iOS associated domains',
           'Universal Links evidence was found, but no concrete applinks: domain is configured.',
           id: 'ios-associated-domains',
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
           fix:
               'Add com.apple.developer.associated-domains with at least one applinks: entry in Runner entitlements.',
         ),
       );
     }
+  }
+
+  Finding _androidAppLinksFinding({
+    required String id,
+    required String title,
+    required String detail,
+    required String file,
+    required int line,
+    required String fix,
+  }) {
+    if (usesAndroidAppLinks == false) {
+      return Finding(
+        FindingLevel.info,
+        title,
+        '$detail store_profile.uses_android_app_links=false, so this is informational only.',
+        id: id,
+        file: file,
+        line: line,
+        confidence: FindingConfidence.low,
+        source: FindingSource.projectConfig,
+        evidenceSummary: 'Profile declares Android App Links are not used',
+      );
+    }
+    return Finding(
+      FindingLevel.warning,
+      title,
+      detail,
+      id: id,
+      file: file,
+      line: line,
+      confidence: FindingConfidence.medium,
+      source: FindingSource.staticAnalysis,
+      fix: fix,
+    );
   }
 
   Future<void> _checkPush(Directory project, List<Finding> findings) async {
@@ -461,16 +568,57 @@ class DeepLinkPushCheck {
         .toList();
   }
 
-  /// Concrete Universal Links evidence only — not arbitrary URL schemes.
-  bool _hasConcreteUniversalLinkEvidence(String? entitlements) {
+  /// Evidence that the project intends Universal Links / applinks (not
+  /// webcredentials-only or custom URL schemes).
+  bool _hasApplinksOrientedEvidence(String? entitlements) {
     if (entitlements == null) return false;
-    if (entitlements.contains('com.apple.developer.associated-domains')) {
-      return true;
-    }
     if (RegExp(r'applinks:', caseSensitive: false).hasMatch(entitlements)) {
       return true;
     }
-    return false;
+    // associated-domains array present but empty / without applinks still
+    // counts as oriented evidence when Universal Links are in profile scope.
+    final match = RegExp(
+      r'<key>com\.apple\.developer\.associated-domains</key>\s*<array>([\s\S]*?)</array>',
+      caseSensitive: false,
+    ).firstMatch(entitlements);
+    if (match == null) return false;
+    final body = match.group(1)!;
+    // Ignore arrays that only contain webcredentials/activitycontinuation.
+    final strings = RegExp(r'<string>([^<]*)</string>')
+        .allMatches(body)
+        .map((m) => m.group(1)!.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    if (strings.isEmpty) return true;
+    return strings.any((s) => s.startsWith('applinks:'));
+  }
+
+  /// Known payment / auth SDK URL-scheme placeholders (not app-owned schemes).
+  String? _paymentOrAuthSdkSource(String scheme) {
+    final lower = scheme.toLowerCase();
+    if (scheme.contains('REVERSED_CLIENT_ID') ||
+        lower.contains('reversed_client_id') ||
+        lower.contains('googleusercontent.com')) {
+      return 'Google Sign-In / GoogleService-Info';
+    }
+    if (RegExp(r'^fb\d', caseSensitive: false).hasMatch(scheme) ||
+        lower.contains('facebook')) {
+      return 'Facebook SDK';
+    }
+    if (lower.contains('razorpay')) return 'Razorpay';
+    if (lower.contains('stripe')) return 'Stripe';
+    if (lower.contains('paytm')) return 'Paytm';
+    if (lower.contains('juspay') || lower.contains('hyperpay')) return 'Juspay';
+    if (lower.contains('cashfree')) return 'Cashfree';
+    if (lower.contains('phonepe')) return 'PhonePe';
+    if (lower.contains('paypal')) return 'PayPal';
+    if (scheme.contains(r'$(') &&
+        (scheme.contains('CLIENT_ID') ||
+            scheme.contains('API_KEY') ||
+            scheme.contains('GIDClientID'))) {
+      return 'auth/payment SDK build setting';
+    }
+    return null;
   }
 
   bool _looksLikeVariableScheme(String scheme) {

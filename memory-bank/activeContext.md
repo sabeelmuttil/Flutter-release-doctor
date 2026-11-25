@@ -1,9 +1,11 @@
 # Active context
 
-Store Guideline Risk Check landed (offline risk scanner, not compliance):
+Profile-aware deep-link / CI refinements:
 
-- `store_compliance` YAML: privacy_policy_url, account_required, account_deletion_url, reviewer_access, user_generated_content, uses_tracking
-- Play + Apple risk findings with guideline references; disclaimer in console/Markdown/JSON
-- Never claims Data Safety / App Privacy completeness; no network calls
+- `uses_universal_links: false` → no associated-domains WARNING from schemes/SDK noise; MANUAL REVIEW only when concrete `applinks:` exist
+- `uses_android_app_links: false` → App Links host/autoVerify → INFO
+- Payment/auth SDK unresolved URL schemes → MANUAL REVIEW with SDK source; empty/duplicate app schemes stay WARNING
+- `ci_required: false` → missing CI is INFO
+- Real warnings kept: key.properties, PrivacyInfo, secrets, insecure HTTP, signing
 
-Prior: insecure-HTTP XML/Xcode exclusions; Firebase client-config secret exclusions; physical-goods payment flows.
+Prior: finding confidence model + store_profile.

@@ -12,10 +12,12 @@ class StoreComplianceCheck {
   StoreComplianceCheck({
     required this.storeCompliance,
     required this.transactionType,
+    this.storeProfile = StoreProfile.empty,
   });
 
   final StoreComplianceConfig storeCompliance;
   final TransactionType transactionType;
+  final StoreProfile storeProfile;
 
   static const disclaimer =
       'Automated checks identify risk signals; store approval and legal compliance require human review.';
@@ -150,10 +152,15 @@ class StoreComplianceCheck {
           FindingLevel.warning,
           'Play privacy policy',
           'Sensitive Android permissions were detected but `privacy_policy_url` is not configured. '
-              'Google Play User Data / privacy policy expectations require a publicly accessible policy URL when personal/sensitive data is collected (risk signal; not a compliance verdict).',
+              'Google Play User Data / privacy policy expectations require a publicly accessible policy URL when personal/sensitive data is collected (risk signal; not a compliance verdict). Needs verification.',
           id: 'play-privacy-policy-missing',
           file: s.androidManifestFile,
           line: s.androidManifestLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          guideline: 'Google Play User Data / Data Safety',
+          evidenceSummary:
+              'Sensitive Android permission(s) without configured privacy_policy_url',
           fix:
               'Set store_compliance.privacy_policy_url in `.release-doctor.yaml` and host a real privacy policy.',
         ),
@@ -169,58 +176,77 @@ class StoreComplianceCheck {
         s.hasContacts) {
       findings.add(
         Finding(
-          FindingLevel.warning,
+          FindingLevel.manualReview,
           'Play Data Safety review',
           'Permissions, analytics, Firebase, location, camera, contacts, and/or advertising SDKs were detected. '
               'Play Console Data Safety declarations must be reviewed manually — this tool never claims Data Safety forms are complete.',
           id: 'play-data-safety-review',
           file: s.dataSafetyEvidenceFile,
           line: s.dataSafetyEvidenceLine,
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          guideline: 'Google Play User Data / Data Safety',
+          evidenceSummary:
+              'Data-collection related SDK/permission signals present',
           fix:
               'Reconcile collected data types, sharing, and purposes in Play Console Data Safety against actual SDK/permission usage.',
         ),
       );
     }
 
-    if (cfg.accountRequired == true && !cfg.hasAccountDeletionUrl) {
+    final accountRequired =
+        cfg.accountRequired == true || storeProfile.hasUserAccounts == true;
+    if (accountRequired && !cfg.hasAccountDeletionUrl) {
       findings.add(
         const Finding(
           FindingLevel.warning,
           'Play account deletion',
-          '`account_required` is true but `account_deletion_url` is not configured. '
-              'Google Play account deletion policy expects an in-app and/or web deletion path when accounts are created (risk signal).',
+          '`account_required` / has_user_accounts is true but `account_deletion_url` is not configured. '
+              'Google Play account deletion policy expects an in-app and/or web deletion path when accounts are created (risk signal). Needs verification.',
           id: 'play-account-deletion-missing',
+          confidence: FindingConfidence.medium,
+          source: FindingSource.projectConfig,
+          guideline: 'Google Play Account Deletion',
           fix:
               'Provide store_compliance.account_deletion_url and implement account deletion.',
         ),
       );
     }
 
-    final isDigital = transactionType == TransactionType.digitalGoods ||
-        transactionType == TransactionType.subscription;
+    final isPhysical = storeProfile.isPhysicalGoodsOnly ||
+        transactionType == TransactionType.physicalGoods;
+    final isDigital = !isPhysical &&
+        (storeProfile.isDigitalLike ||
+            transactionType == TransactionType.digitalGoods ||
+            transactionType == TransactionType.subscription);
     if (isDigital && s.hasExternalPayment && !s.hasBilling) {
       findings.add(
         Finding(
           FindingLevel.warning,
           'Play Billing bypass risk',
-          'transaction_type is digital_goods/subscription and an external payment flow appears present without detectable Google Play Billing / in_app_purchase. '
-              'Google Play Payments policy generally requires Play Billing for digital goods (risk signal; human policy review required).',
+          'Digital goods/subscription profile and an external payment flow appear present without detectable Google Play Billing / in_app_purchase. '
+              'Google Play Payments policy generally requires Play Billing for digital goods (risk signal; human policy review required). Needs verification.',
           id: 'play-billing-bypass-risk',
           file: s.externalPaymentFile,
           line: s.externalPaymentLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          evidenceSummary: 'External payment without Play Billing dependency',
           fix:
               'Use Google Play Billing for digital goods/subscriptions, or confirm an allowed exception with counsel.',
         ),
       );
     }
 
-    if (transactionType == TransactionType.physicalGoods) {
+    if (isPhysical) {
       findings.add(
         const Finding(
           FindingLevel.passed,
           'Play physical goods payments',
-          'transaction_type is physical_goods. Google Play Payments policy generally permits external payment methods for physical goods and offline services; Play Billing is not required for those cases (risk framing only).',
+          'business_model/transaction_type is physical_goods. Google Play Payments policy generally permits external payment methods for physical goods and offline services; Play Billing is not required for those cases (risk framing only).',
           id: 'play-physical-goods-payments-allowed',
+          confidence: FindingConfidence.high,
+          source: FindingSource.projectConfig,
         ),
       );
     }
@@ -231,6 +257,8 @@ class StoreComplianceCheck {
         'Play Families / target audience',
         'Target audience and Families / Designed for Families compliance cannot be determined from static analysis. Do not guess age ratings or Families requirements — review Play Console target audience settings manually.',
         id: 'play-families-audience-unknown',
+        confidence: FindingConfidence.low,
+        source: FindingSource.manualReview,
       ),
     );
   }
@@ -244,141 +272,196 @@ class StoreComplianceCheck {
           FindingLevel.warning,
           'App Store privacy policy',
           'Sensitive iOS usage descriptions were detected but `privacy_policy_url` is not configured. '
-              'App Store Review Guideline 5.1.1 (Data Collection and Storage) expects a privacy policy when personal data is collected (risk signal).',
+              'App Store Review Guideline 5.1.1 (Data Collection and Storage) expects a privacy policy when personal data is collected (risk signal). Needs verification.',
           id: 'apple-privacy-policy-missing',
           file: s.infoPlistFile,
           line: s.infoPlistLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          guideline: 'Apple App Review 5.1.1',
+          evidenceSummary:
+              'iOS usage description(s) without privacy_policy_url',
           fix:
               'Set store_compliance.privacy_policy_url and ensure App Privacy / privacy policy links are accurate.',
         ),
       );
     }
 
-    if (cfg.accountRequired == true && !cfg.hasAccountDeletionUrl) {
+    final accountRequired =
+        cfg.accountRequired == true || storeProfile.hasUserAccounts == true;
+    if (accountRequired && !cfg.hasAccountDeletionUrl) {
       findings.add(
         const Finding(
           FindingLevel.warning,
           'App Store account deletion',
-          '`account_required` is true but `account_deletion_url` is not configured. '
-              'App Store Review Guideline 5.1.1(v) expects account deletion when account creation is offered (risk signal).',
+          '`account_required` / has_user_accounts is true but `account_deletion_url` is not configured. '
+              'App Store Review Guideline 5.1.1(v) expects account deletion when account creation is offered (risk signal). Needs verification.',
           id: 'apple-account-deletion-missing',
+          confidence: FindingConfidence.medium,
+          source: FindingSource.projectConfig,
+          guideline: 'Apple App Review 5.1.1',
           fix:
               'Provide store_compliance.account_deletion_url and an in-app deletion flow.',
         ),
       );
     }
 
-    if (s.hasSocialLogin) {
-      if (!s.hasSignInWithApple) {
-        findings.add(
-          Finding(
-            FindingLevel.warning,
-            'Sign in with Apple',
-            'Third-party/social sign-in appears present, but Sign in with Apple configuration was not detected. '
-                'App Store Review Guideline 4.8 (Sign in with Apple) may apply when other third-party/social logins are offered (risk signal; verify entitlement and UX manually).',
-            id: 'apple-sign-in-with-apple-review',
-            file: s.socialLoginFile,
-            line: s.socialLoginLine,
-            fix:
-                'Add Sign in with Apple if Guideline 4.8 applies, or document why an exception applies.',
-          ),
-        );
-      }
-    } else if (s.hasOwnAuthOnly) {
+    final firstPartyAuth = storeProfile.isFirstPartyAuthOnly;
+    if (s.hasSocialLogin &&
+        !s.hasSignInWithApple &&
+        !firstPartyAuth &&
+        storeProfile.authentication != StoreAuthentication.emailPassword &&
+        storeProfile.authentication != StoreAuthentication.phoneOtp) {
+      findings.add(
+        Finding(
+          FindingLevel.warning,
+          'Sign in with Apple',
+          'Third-party/social sign-in appears present, but Sign in with Apple configuration was not detected. '
+              'App Store Review Guideline 4.8 (Sign in with Apple) may apply when other third-party/social logins are offered (risk signal; verify entitlement and UX manually). Needs verification.',
+          id: 'apple-sign-in-with-apple-review',
+          file: s.socialLoginFile,
+          line: s.socialLoginLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          guideline: 'Apple App Review 4.8 Login Services',
+          evidenceSummary:
+              'Social login dependency/usage without Sign in with Apple',
+          fix:
+              'Add Sign in with Apple if Guideline 4.8 applies, or document why an exception applies.',
+        ),
+      );
+    } else if (s.hasOwnAuthOnly || firstPartyAuth) {
       findings.add(
         Finding(
           FindingLevel.info,
           'Sign in with Apple',
-          'Only first-party email/password/phone login signals were detected (no third-party/social login packages found). '
+          'Only first-party email/password/phone login signals were detected (or store_profile.authentication declares first-party login). '
               'Sign in with Apple is typically not required for that pattern, but static analysis has evidence limitations and may miss custom OAuth.',
           id: 'apple-sign-in-with-apple-review',
           file: s.ownAuthFile,
           line: s.ownAuthLine,
+          confidence: FindingConfidence.low,
+          source: FindingSource.projectConfig,
+          guideline: 'Apple App Review 4.8 Login Services',
+          evidenceSummary:
+              'First-party auth profile or email/phone login signals',
         ),
       );
     }
 
-    final trackingDeclared = cfg.usesTracking != null;
+    final trackingDeclared =
+        cfg.usesTracking != null || storeProfile.usesTracking != null;
+    final usesTracking =
+        cfg.usesTracking == true || storeProfile.usesTracking == true;
     if ((s.hasAds || s.hasAdSupport || s.hasAttSignals) && !trackingDeclared) {
       findings.add(
         Finding(
           FindingLevel.warning,
           'App tracking declaration',
           'Advertising/tracking SDKs or AdSupport-related signals were detected, but `uses_tracking` is not explicitly declared in `.release-doctor.yaml`. '
-              'App Privacy / tracking disclosures and ATT (Guideline 5.1.2) require human review (risk signal).',
+              'App Privacy / tracking disclosures and ATT require human review (risk signal). Needs verification.',
           id: 'apple-att-review',
           file: s.trackingEvidenceFile,
           line: s.trackingEvidenceLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          guideline: 'Apple App Review 5.1.1',
+          evidenceSummary:
+              'Ads/tracking signals without uses_tracking declaration',
           fix:
-              'Set store_compliance.uses_tracking to true or false after reviewing App Privacy and ATT requirements.',
+              'Set store_compliance.uses_tracking or store_profile.uses_tracking after reviewing App Privacy and ATT requirements.',
         ),
       );
     }
 
-    if (cfg.usesTracking == true && !s.hasAttUsageDescription) {
+    if (usesTracking && !s.hasAttUsageDescription) {
       findings.add(
         Finding(
           FindingLevel.warning,
           'App Tracking Transparency',
           '`uses_tracking` is true but NSUserTrackingUsageDescription / ATT request handling was not detected. '
-              'Guideline 5.1.2 (Privacy - Data Use and Sharing) expects ATT when tracking users (risk signal).',
+              'Guideline 5.1.2 (Privacy - Data Use and Sharing) expects ATT when tracking users (risk signal). Needs verification.',
           id: 'apple-att-review',
           file: s.infoPlistFile,
           line: s.infoPlistLine,
+          confidence: FindingConfidence.medium,
+          source: FindingSource.projectConfig,
+          guideline: 'Apple App Review 5.1.1',
+          evidenceSummary: 'uses_tracking=true without ATT usage description',
           fix:
               'Add NSUserTrackingUsageDescription and request authorization before tracking.',
         ),
       );
     }
 
-    final isDigital = transactionType == TransactionType.digitalGoods ||
-        transactionType == TransactionType.subscription;
+    final isPhysical = storeProfile.isPhysicalGoodsOnly ||
+        transactionType == TransactionType.physicalGoods;
+    final isDigital = !isPhysical &&
+        (storeProfile.isDigitalLike ||
+            transactionType == TransactionType.digitalGoods ||
+            transactionType == TransactionType.subscription);
     if (isDigital && !s.hasBilling) {
       findings.add(
         const Finding(
           FindingLevel.warning,
           'App Store In-App Purchase',
-          'transaction_type is digital_goods/subscription but Apple In-App Purchase / in_app_purchase support was not detected. '
-              'Guideline 3.1.1 (In-App Purchase) generally requires IAP for digital goods (risk signal).',
+          'Digital goods/subscription profile but Apple In-App Purchase / in_app_purchase support was not detected. '
+              'Guideline 3.1.1 (In-App Purchase) generally requires IAP for digital goods (risk signal). Needs verification.',
           id: 'apple-iap-missing',
+          confidence: FindingConfidence.medium,
+          source: FindingSource.staticAnalysis,
+          guideline: 'Apple App Review 3.1 Payments',
           fix:
               'Integrate StoreKit / in_app_purchase for digital content, or confirm an allowed Reader/multiplatform exception.',
         ),
       );
     }
 
-    if (transactionType == TransactionType.physicalGoods) {
+    if (isPhysical) {
       findings.add(
         const Finding(
           FindingLevel.passed,
           'App Store physical goods payments',
-          'transaction_type is physical_goods. Guideline 3.1.5(a) generally allows external payment methods for goods/services consumed outside the app (risk framing only; not a compliance certificate).',
+          'business_model/transaction_type is physical_goods. Guideline 3.1.5(a) generally allows external payment methods for goods/services consumed outside the app (risk framing only; not a compliance certificate).',
           id: 'apple-physical-goods-payments-allowed',
+          confidence: FindingConfidence.high,
+          source: FindingSource.projectConfig,
+          guideline: 'Apple App Review 3.1 Payments',
         ),
       );
     }
 
-    if (cfg.accountRequired == true && cfg.demoAccountProvided == false) {
+    final demoMissing =
+        (cfg.accountRequired == true || storeProfile.hasUserAccounts == true) &&
+            (cfg.demoAccountProvided == false ||
+                storeProfile.reviewerDemoAccount == false);
+    if (demoMissing && storeProfile.reviewerDemoAccount != true) {
       findings.add(
         const Finding(
           FindingLevel.warning,
           'App Review access',
-          '`account_required` is true and `reviewer_access.demo_account_provided` is false. '
-              'App Store Review Guideline 2.1 (App Completeness) expects demo credentials when login is required (risk signal).',
+          'Accounts appear required and reviewer demo account is not confirmed. '
+              'App Store Review Guideline 2.1 (App Completeness) expects demo credentials when login is required (risk signal). Needs verification.',
           id: 'apple-reviewer-access-missing',
+          confidence: FindingConfidence.medium,
+          source: FindingSource.projectConfig,
           fix:
-              'Provide a demo account in App Store Connect review notes and set demo_account_provided: true when ready.',
+              'Provide a demo account in App Store Connect review notes and set reviewer_demo_account / demo_account_provided: true when ready.',
         ),
       );
     }
 
-    if (cfg.userGeneratedContent == true) {
+    final ugc = cfg.userGeneratedContent == true ||
+        storeProfile.hasUserGeneratedContent == true;
+    if (ugc && storeProfile.hasUserGeneratedContent != false) {
       findings.add(
         const Finding(
-          FindingLevel.warning,
+          FindingLevel.manualReview,
           'User-generated content',
-          '`user_generated_content` is true. Guideline 1.2 (User-Generated Content) expects filtering, reporting, blocking, and contact mechanisms — these require manual product/legal review (risk signal; not auto-verified).',
+          '`user_generated_content` / has_user_generated_content is true. Guideline 1.2 (User-Generated Content) expects filtering, reporting, blocking, and contact mechanisms — these require manual product/legal review (risk signal; not auto-verified).',
           id: 'apple-ugc-moderation-review',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
           fix:
               'Verify moderation, report/block flows, and published contact methods before submission.',
         ),

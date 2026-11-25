@@ -214,6 +214,7 @@ store_compliance:
 | `transaction_type` | `digital_goods`, `subscription`, `physical_goods`, `external_payment`, or `unknown`. |
 | `payment_flows` | Optional declarations: `external_gateway`, `cash_on_delivery`, `offline_payment`, `no_in_app_payment`. |
 | `store_compliance` | Optional Play/App Store guideline *risk* declarations (privacy URL, account deletion, tracking, UGC, reviewer access). |
+| `store_profile` | Product policy profile used to suppress irrelevant findings (business model, auth style, location/tracking/UGC/Universal Links). |
 
 ### Transaction / billing safety (offline)
 
@@ -252,6 +253,16 @@ transaction_type: subscription
 ### Store guideline risk (offline)
 
 Release Doctor emits **risk signals** for Google Play and Apple App Store policies. It is **not** a guaranteed-compliance checker and never claims Data Safety or App Privacy declarations are complete. Every store finding names the relevant guideline/policy area.
+
+Each finding includes:
+- `confidence`: `high` | `medium` | `low`
+- `source`: `static-analysis` | `project-config` | `manual-review`
+- optional `guideline` (e.g. Google Play User Data / Data Safety, Apple App Review 5.1.1 / 3.1 / 4.8)
+- optional `evidenceSummary`
+
+**MANUAL REVIEW** items and low-confidence findings do **not** reduce the release score or fail `--fail-on warning`.
+
+`store_profile` avoids irrelevant checks (example: physical goods skip IAP/Play Billing requirements; phone OTP/email-only skip Sign in with Apple warnings; `uses_universal_links: false` / `uses_android_app_links: false` downgrade inferred deep-link warnings; `ci_required: false` makes missing CI informational).
 
 Reports include this disclaimer (console, Markdown, and JSON `disclaimer` field):
 

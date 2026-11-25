@@ -11,6 +11,7 @@ import 'package:flutter_release_doctor/src/finding.dart';
 import 'package:flutter_release_doctor/src/platform_compatibility_check.dart';
 import 'package:flutter_release_doctor/src/signing_check.dart';
 import 'package:flutter_release_doctor/src/store_compliance_check.dart';
+import 'package:flutter_release_doctor/src/store_profile_policy.dart';
 import 'package:flutter_release_doctor/src/transaction_safety_check.dart';
 
 export 'package:flutter_release_doctor/src/finding.dart';
@@ -26,17 +27,20 @@ class DoctorReport {
   bool get hasErrors =>
       findings.any((finding) => finding.level == FindingLevel.error);
 
+  /// Score-affecting warnings only (excludes MANUAL REVIEW).
   bool get hasWarnings =>
-      findings.any((finding) => finding.level == FindingLevel.warning);
+      findings.any((finding) => finding.affectsFailOnWarning);
 
   int get score {
     var result = 100;
     for (final finding in findings) {
+      if (!finding.affectsScore) continue;
       switch (finding.level) {
         case FindingLevel.error:
           result -= 15;
         case FindingLevel.warning:
           result -= 5;
+        case FindingLevel.manualReview:
         case FindingLevel.info:
         case FindingLevel.passed:
           break;
@@ -50,15 +54,18 @@ class DoctorReport {
     buffer.writeln('Release score: $score/100');
     buffer.writeln('Disclaimer: $storeRiskDisclaimer\n');
     for (final finding in findings) {
-      final icon = switch (finding.level) {
-        FindingLevel.error => 'ERROR',
-        FindingLevel.warning => 'WARN ',
-        FindingLevel.info => 'INFO ',
-        FindingLevel.passed => 'PASS ',
-      };
       buffer.writeln(
-        '[$icon] [${finding.id}] ${finding.title}: ${finding.detail}',
+        '[${finding.levelLabel}] [${finding.id}] ${finding.title}: ${finding.detail}',
       );
+      buffer.writeln(
+        '       confidence=${finding.confidence.name} source=${_sourceLabel(finding.source)}',
+      );
+      if (finding.guideline != null) {
+        buffer.writeln('       Guideline: ${finding.guideline}');
+      }
+      if (finding.evidenceSummary != null) {
+        buffer.writeln('       Evidence: ${finding.evidenceSummary}');
+      }
       final evidence = finding.evidenceLabel;
       if (evidence != null) {
         buffer.writeln('       At: $evidence');
@@ -76,11 +83,20 @@ class DoctorReport {
     for (final level in FindingLevel.values) {
       final items = findings.where((finding) => finding.level == level);
       if (items.isEmpty) continue;
-      buffer.writeln('## ${level.name.toUpperCase()}\n');
+      buffer.writeln('## ${level.reportSectionTitle}\n');
       for (final finding in items) {
         buffer.writeln(
           '- **${finding.title}** (`${finding.id}`) — ${finding.detail}',
         );
+        buffer.writeln(
+          '  - Confidence: `${finding.confidence.name}` · Source: `${_sourceLabel(finding.source)}`',
+        );
+        if (finding.guideline != null) {
+          buffer.writeln('  - Guideline: ${finding.guideline}');
+        }
+        if (finding.evidenceSummary != null) {
+          buffer.writeln('  - Evidence: ${finding.evidenceSummary}');
+        }
         final evidence = finding.evidenceLabel;
         if (evidence != null) buffer.writeln('  - At: `$evidence`');
         if (finding.fix != null) buffer.writeln('  - Fix: ${finding.fix}');
@@ -94,10 +110,14 @@ class DoctorReport {
 
   Map<String, dynamic> toJson() {
     final counts = <String, int>{
-      for (final level in FindingLevel.values) level.name: 0,
+      for (final level in FindingLevel.values)
+        (level == FindingLevel.manualReview ? 'manual_review' : level.name): 0,
     };
     for (final finding in findings) {
-      counts[finding.level.name] = (counts[finding.level.name] ?? 0) + 1;
+      final key = finding.level == FindingLevel.manualReview
+          ? 'manual_review'
+          : finding.level.name;
+      counts[key] = (counts[key] ?? 0) + 1;
     }
     return {
       'schemaVersion': jsonSchemaVersion,
@@ -107,12 +127,19 @@ class DoctorReport {
       'summary': {
         'error': counts['error'] ?? 0,
         'warning': counts['warning'] ?? 0,
+        'manual_review': counts['manual_review'] ?? 0,
         'info': counts['info'] ?? 0,
         'passed': counts['passed'] ?? 0,
       },
       'findings': findings.map((f) => f.toJson()).toList(),
     };
   }
+
+  static String _sourceLabel(FindingSource source) => switch (source) {
+        FindingSource.staticAnalysis => 'static-analysis',
+        FindingSource.projectConfig => 'project-config',
+        FindingSource.manualReview => 'manual-review',
+      };
 
   String toJsonString({bool pretty = true}) {
     final encoder =
@@ -161,8 +188,13 @@ class ReleaseDoctor {
         .run(project, findings);
     await SigningCheck().run(project, findings);
     await PlatformCompatibilityCheck().run(project, findings);
-    await DeepLinkPushCheck().run(project, findings);
-    await CicdCheck().run(project, findings);
+    await DeepLinkPushCheck(
+      usesUniversalLinks: configResult.config.storeProfile.usesUniversalLinks,
+      usesAndroidAppLinks: configResult.config.storeProfile.usesAndroidAppLinks,
+    ).run(project, findings);
+    await CicdCheck(
+      ciRequired: configResult.config.storeProfile.ciRequired,
+    ).run(project, findings);
     await TransactionSafetyCheck(
       transactionType: configResult.config.transactionType,
       paymentFlows: configResult.config.paymentFlows,
@@ -170,9 +202,11 @@ class ReleaseDoctor {
     await StoreComplianceCheck(
       storeCompliance: configResult.config.storeCompliance,
       transactionType: configResult.config.transactionType,
+      storeProfile: configResult.config.storeProfile,
     ).run(project, findings);
 
-    final applied = DoctorConfigLoader().apply(configResult.config, findings);
+    final profiled = StoreProfilePolicy().apply(configResult.config, findings);
+    final applied = DoctorConfigLoader().apply(configResult.config, profiled);
     return DoctorReport(project, applied);
   }
 
@@ -459,6 +493,8 @@ class ReleaseDoctor {
           id: 'insecure-http',
           file: httpFile,
           line: httpLine,
+          confidence: FindingConfidence.high,
+          source: FindingSource.staticAnalysis,
           fix: 'Use HTTPS for production endpoints.',
         ),
       );
@@ -473,6 +509,8 @@ class ReleaseDoctor {
           file: secretFile,
           line: secretLine,
           classification: secretClass,
+          confidence: FindingConfidence.high,
+          source: FindingSource.staticAnalysis,
           fix:
               'Review it; rotate real secrets and move them to secure server-side configuration.',
         ),

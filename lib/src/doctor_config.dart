@@ -48,6 +48,65 @@ class StoreComplianceConfig {
   static const empty = StoreComplianceConfig();
 }
 
+enum StoreBusinessModel {
+  physicalGoods,
+  digitalGoods,
+  subscription,
+  mixed,
+  unknown,
+}
+
+enum StoreAuthentication {
+  none,
+  emailPassword,
+  phoneOtp,
+  socialLogin,
+  mixed,
+  unknown,
+}
+
+/// Project policy profile used to avoid irrelevant cross-app findings.
+class StoreProfile {
+  const StoreProfile({
+    this.businessModel = StoreBusinessModel.unknown,
+    this.authentication = StoreAuthentication.unknown,
+    this.usesLocation,
+    this.usesTracking,
+    this.hasUserAccounts,
+    this.hasUserGeneratedContent,
+    this.usesUniversalLinks,
+    this.usesAndroidAppLinks,
+    this.ciRequired,
+    this.reviewerDemoAccount,
+  });
+
+  final StoreBusinessModel businessModel;
+  final StoreAuthentication authentication;
+  final bool? usesLocation;
+  final bool? usesTracking;
+  final bool? hasUserAccounts;
+  final bool? hasUserGeneratedContent;
+  final bool? usesUniversalLinks;
+  final bool? usesAndroidAppLinks;
+  final bool? ciRequired;
+  final bool? reviewerDemoAccount;
+
+  bool get isPhysicalGoodsOnly =>
+      businessModel == StoreBusinessModel.physicalGoods;
+
+  bool get isDigitalLike =>
+      businessModel == StoreBusinessModel.digitalGoods ||
+      businessModel == StoreBusinessModel.subscription ||
+      businessModel == StoreBusinessModel.mixed;
+
+  bool get isFirstPartyAuthOnly =>
+      authentication == StoreAuthentication.emailPassword ||
+      authentication == StoreAuthentication.phoneOtp ||
+      authentication == StoreAuthentication.none;
+
+  static const empty = StoreProfile();
+}
+
 class DoctorConfig {
   const DoctorConfig({
     this.version = 1,
@@ -57,6 +116,7 @@ class DoctorConfig {
     this.transactionType = TransactionType.unknown,
     this.paymentFlows = const {},
     this.storeCompliance = StoreComplianceConfig.empty,
+    this.storeProfile = StoreProfile.empty,
   });
 
   final int version;
@@ -66,6 +126,7 @@ class DoctorConfig {
   final TransactionType transactionType;
   final Set<PaymentFlow> paymentFlows;
   final StoreComplianceConfig storeCompliance;
+  final StoreProfile storeProfile;
 
   static const empty = DoctorConfig();
 }
@@ -286,6 +347,28 @@ class DoctorConfigLoader {
       }
     }
 
+    var storeProfile = StoreProfile.empty;
+    final profileRaw = map['store_profile'];
+    if (profileRaw != null) {
+      if (profileRaw is! Map && profileRaw is! YamlMap) {
+        configFindings.add(
+          const Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_profile` must be a mapping/object.',
+            id: 'config-invalid-store-profile',
+            fix: 'See `.release-doctor.example.yaml` for store_profile keys.',
+          ),
+        );
+      } else {
+        final profileMap = _asStringKeyedMap(profileRaw);
+        final parsed = _parseStoreProfile(profileMap, configFindings);
+        if (parsed != null) {
+          storeProfile = parsed;
+        }
+      }
+    }
+
     if (configFindings.isNotEmpty) {
       return ConfigLoadResult(
         config: DoctorConfig.empty,
@@ -307,7 +390,110 @@ class DoctorConfigLoader {
         transactionType: transactionType,
         paymentFlows: paymentFlows,
         storeCompliance: storeCompliance,
+        storeProfile: storeProfile,
       ),
+    );
+  }
+
+  StoreProfile? _parseStoreProfile(
+    Map<String, dynamic> map,
+    List<Finding> configFindings,
+  ) {
+    var businessModel = StoreBusinessModel.unknown;
+    final businessRaw = map['business_model'];
+    if (businessRaw != null) {
+      final parsed = switch (businessRaw.toString().trim().toLowerCase()) {
+        'physical_goods' => StoreBusinessModel.physicalGoods,
+        'digital_goods' => StoreBusinessModel.digitalGoods,
+        'subscription' => StoreBusinessModel.subscription,
+        'mixed' => StoreBusinessModel.mixed,
+        'unknown' => StoreBusinessModel.unknown,
+        _ => null,
+      };
+      if (parsed == null) {
+        configFindings.add(
+          Finding(
+            FindingLevel.error,
+            'Project configuration',
+            'Invalid store_profile.business_model `${businessRaw.toString()}`.',
+            id: 'config-invalid-store-profile',
+            fix:
+                'Use: physical_goods, digital_goods, subscription, mixed, unknown.',
+          ),
+        );
+        return null;
+      }
+      businessModel = parsed;
+    }
+
+    var authentication = StoreAuthentication.unknown;
+    final authRaw = map['authentication'];
+    if (authRaw != null) {
+      final parsed = switch (authRaw.toString().trim().toLowerCase()) {
+        'none' => StoreAuthentication.none,
+        'email_password' => StoreAuthentication.emailPassword,
+        'phone_otp' => StoreAuthentication.phoneOtp,
+        'social_login' => StoreAuthentication.socialLogin,
+        'mixed' => StoreAuthentication.mixed,
+        'unknown' => StoreAuthentication.unknown,
+        _ => null,
+      };
+      if (parsed == null) {
+        configFindings.add(
+          Finding(
+            FindingLevel.error,
+            'Project configuration',
+            'Invalid store_profile.authentication `${authRaw.toString()}`.',
+            id: 'config-invalid-store-profile',
+            fix:
+                'Use: none, email_password, phone_otp, social_login, mixed, unknown.',
+          ),
+        );
+        return null;
+      }
+      authentication = parsed;
+    }
+
+    bool? parseFlag(String key) {
+      final raw = map[key];
+      if (raw == null) return null;
+      final value = _parseBool(raw);
+      if (value == null) {
+        configFindings.add(
+          Finding(
+            FindingLevel.error,
+            'Project configuration',
+            '`store_profile.$key` must be a boolean.',
+            id: 'config-invalid-store-profile',
+          ),
+        );
+      }
+      return value;
+    }
+
+    final usesLocation = parseFlag('uses_location');
+    final usesTracking = parseFlag('uses_tracking');
+    final hasUserAccounts = parseFlag('has_user_accounts');
+    final hasUgc = parseFlag('has_user_generated_content');
+    final usesUniversalLinks = parseFlag('uses_universal_links');
+    final usesAndroidAppLinks = parseFlag('uses_android_app_links');
+    final ciRequired = parseFlag('ci_required');
+    final reviewerDemo = parseFlag('reviewer_demo_account');
+    if (configFindings.any((f) => f.id == 'config-invalid-store-profile')) {
+      return null;
+    }
+
+    return StoreProfile(
+      businessModel: businessModel,
+      authentication: authentication,
+      usesLocation: usesLocation,
+      usesTracking: usesTracking,
+      hasUserAccounts: hasUserAccounts,
+      hasUserGeneratedContent: hasUgc,
+      usesUniversalLinks: usesUniversalLinks,
+      usesAndroidAppLinks: usesAndroidAppLinks,
+      ciRequired: ciRequired,
+      reviewerDemoAccount: reviewerDemo,
     );
   }
 
@@ -468,8 +654,9 @@ class DoctorConfigLoader {
   bool _isNonSuppressible(String id) => nonSuppressibleFindingIds.contains(id);
 
   int _rank(FindingLevel level) => switch (level) {
-        FindingLevel.error => 3,
-        FindingLevel.warning => 2,
+        FindingLevel.error => 4,
+        FindingLevel.warning => 3,
+        FindingLevel.manualReview => 2,
         FindingLevel.info => 1,
         FindingLevel.passed => 0,
       };
@@ -478,6 +665,7 @@ class DoctorConfigLoader {
     return switch (value) {
       'error' => FindingLevel.error,
       'warning' => FindingLevel.warning,
+      'manual_review' || 'manual-review' => FindingLevel.manualReview,
       'info' => FindingLevel.info,
       _ => null,
     };

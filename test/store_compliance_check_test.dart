@@ -62,7 +62,8 @@ dependencies:
     final f = report.findings.singleWhere(
       (x) => x.id == 'play-data-safety-review',
     );
-    expect(f.level, FindingLevel.warning);
+    expect(f.level, FindingLevel.manualReview);
+    expect(f.confidence, FindingConfidence.low);
     expect(f.detail, contains('manually'));
     expect(f.detail, contains('never claims Data Safety forms are complete'));
   });
@@ -325,7 +326,7 @@ store_compliance:
     final f = report.findings.singleWhere(
       (x) => x.id == 'apple-ugc-moderation-review',
     );
-    expect(f.level, FindingLevel.warning);
+    expect(f.level, FindingLevel.manualReview);
     expect(f.detail, contains('1.2'));
   });
 

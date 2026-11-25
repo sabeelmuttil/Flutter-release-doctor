@@ -53,3 +53,17 @@ store_compliance:
     demo_account_provided: false
   user_generated_content: false
   uses_tracking: false
+
+# Policy profile: avoids irrelevant findings across different Flutter apps.
+# Does not hide hard-coded secrets, signing passwords, or insecure production HTTP.
+store_profile:
+  business_model: physical_goods # physical_goods | digital_goods | subscription | mixed | unknown
+  authentication: phone_otp # none | email_password | phone_otp | social_login | mixed | unknown
+  uses_location: true
+  uses_tracking: false
+  has_user_accounts: true
+  has_user_generated_content: false
+  uses_universal_links: false
+  uses_android_app_links: false
+  ci_required: false
+  reviewer_demo_account: true

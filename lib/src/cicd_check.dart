@@ -7,6 +7,11 @@ import 'package:flutter_release_doctor/src/finding.dart';
 /// Never makes network calls and never reports secret values—only variable
 /// names when necessary.
 class CicdCheck {
+  CicdCheck({this.ciRequired});
+
+  /// When false, missing workflows are INFO instead of WARNING.
+  final bool? ciRequired;
+
   static final _androidRelease = RegExp(
     r'''flutter\s+build\s+(?:appbundle|apk)\s+[^\n]*--release'''
     r'''|flutter\s+build\s+appbundle'''
@@ -52,30 +57,59 @@ class CicdCheck {
   Future<void> run(Directory project, List<Finding> findings) async {
     final workflowsDir = Directory(_join(project, '.github/workflows'));
     if (!await workflowsDir.exists()) {
-      findings.add(
-        const Finding(
-          FindingLevel.warning,
-          'CI/CD workflows',
-          'No `.github/workflows` directory was found, so release pipeline readiness could not be verified.',
-          id: 'missing-ci-workflow',
-          fix:
-              'Add GitHub Actions workflows for Flutter validation and Android/iOS release builds.',
-        ),
-      );
+      if (ciRequired == false) {
+        findings.add(
+          const Finding(
+            FindingLevel.info,
+            'CI/CD workflows',
+            'No `.github/workflows` directory was found. store_profile.ci_required=false, so missing CI is informational only.',
+            id: 'missing-ci-workflow',
+            confidence: FindingConfidence.low,
+            source: FindingSource.projectConfig,
+            evidenceSummary: 'Profile declares CI is not required',
+          ),
+        );
+      } else {
+        findings.add(
+          const Finding(
+            FindingLevel.warning,
+            'CI/CD workflows',
+            'No `.github/workflows` directory was found, so release pipeline readiness could not be verified.',
+            id: 'missing-ci-workflow',
+            confidence: FindingConfidence.medium,
+            source: FindingSource.staticAnalysis,
+            fix:
+                'Add GitHub Actions workflows for Flutter validation and Android/iOS release builds.',
+          ),
+        );
+      }
       return;
     }
 
     final workflows = await _loadWorkflows(workflowsDir);
     if (workflows.isEmpty) {
-      findings.add(
-        const Finding(
-          FindingLevel.warning,
-          'CI/CD workflows',
-          '`.github/workflows` exists but no `.yml`/`.yaml` workflow files were found.',
-          id: 'ci-workflows-empty',
-          fix: 'Add at least one GitHub Actions workflow for CI/CD.',
-        ),
-      );
+      if (ciRequired == false) {
+        findings.add(
+          const Finding(
+            FindingLevel.info,
+            'CI/CD workflows',
+            '`.github/workflows` exists but no workflow files were found. store_profile.ci_required=false, so this is informational only.',
+            id: 'ci-workflows-empty',
+            confidence: FindingConfidence.low,
+            source: FindingSource.projectConfig,
+          ),
+        );
+      } else {
+        findings.add(
+          const Finding(
+            FindingLevel.warning,
+            'CI/CD workflows',
+            '`.github/workflows` exists but no `.yml`/`.yaml` workflow files were found.',
+            id: 'ci-workflows-empty',
+            fix: 'Add at least one GitHub Actions workflow for CI/CD.',
+          ),
+        );
+      }
       return;
     }
 
