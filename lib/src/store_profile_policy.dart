@@ -55,7 +55,7 @@ class StoreProfilePolicy {
             '${finding.detail} Profile authentication is ${profile.authentication.name}; '
             'Sign in with Apple is not automatically required for email/password or phone OTP. '
             'Needs verification if custom social OAuth exists.',
-        guideline: 'Apple App Review 4.8 Login Services',
+        guidelineReference: 'Apple App Review 4.8 Login Services',
         evidenceSummary:
             'store_profile.authentication declares first-party login',
       );
@@ -64,7 +64,7 @@ class StoreProfilePolicy {
     // Declared location use: location permission is expected → manual review.
     if (profile.usesLocation == true &&
         finding.id == 'android-sensitive-permissions' &&
-        finding.detail.contains('LOCATION')) {
+        finding.detail.toUpperCase().contains('LOCATION')) {
       return finding.copyWith(
         level: FindingLevel.manualReview,
         confidence: FindingConfidence.low,
@@ -72,7 +72,7 @@ class StoreProfilePolicy {
         detail:
             '${finding.detail} store_profile.uses_location=true, so location permission is expected. '
             'Verify Play Data Safety / App Privacy disclosures manually — not a release blocker by itself.',
-        guideline: 'Google Play User Data / Data Safety',
+        guidelineReference: 'Google Play User Data / Data Safety',
         evidenceSummary:
             'Location permission present; profile declares uses_location',
       );
@@ -80,8 +80,15 @@ class StoreProfilePolicy {
 
     // Universal Links not used: never keep associated-domain WARNINGs.
     if (profile.usesUniversalLinks == false &&
-        finding.id == 'ios-associated-domains' &&
-        finding.level == FindingLevel.warning) {
+        (finding.id == 'ios-associated-domains' ||
+            finding.id == 'apple-universal-links-entitlements') &&
+        (finding.level == FindingLevel.warning ||
+            finding.level == FindingLevel.manualReview)) {
+      if (finding.id == 'apple-universal-links-entitlements' &&
+          finding.level == FindingLevel.manualReview &&
+          finding.detail.contains('cannot be fully validated')) {
+        return null;
+      }
       return finding.copyWith(
         level: FindingLevel.manualReview,
         confidence: FindingConfidence.low,
@@ -132,7 +139,8 @@ class StoreProfilePolicy {
     // Reviewer demo from profile.
     if (profile.hasUserAccounts == true &&
         profile.reviewerDemoAccount == true &&
-        finding.id == 'apple-reviewer-access-missing') {
+        (finding.id == 'apple-reviewer-access-missing' ||
+            finding.id == 'play-reviewer-access-missing')) {
       return null;
     }
 
@@ -140,9 +148,10 @@ class StoreProfilePolicy {
     if (finding.level == FindingLevel.warning &&
         finding.confidence == FindingConfidence.medium &&
         finding.guideline != null &&
+        !finding.detail.toLowerCase().contains('manual review') &&
         !finding.detail.contains('Needs verification')) {
       return finding.copyWith(
-        detail: '${finding.detail} Needs verification.',
+        detail: '${finding.detail} Manual review required.',
       );
     }
 

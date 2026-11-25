@@ -64,8 +64,11 @@ dependencies:
     );
     expect(f.level, FindingLevel.manualReview);
     expect(f.confidence, FindingConfidence.low);
-    expect(f.detail, contains('manually'));
+    expect(f.detail.toLowerCase(), contains('manual review'));
     expect(f.detail, contains('never claims Data Safety forms are complete'));
+    expect(f.guidelineReference, contains('Data Safety'));
+    expect(f.ruleVersion, DoctorReport.guidelineVersion);
+    expect(f.platform, GuidelinePlatform.googlePlay);
   });
 
   test('Play WARNING when account_required without deletion URL', () async {
@@ -129,14 +132,16 @@ dependencies:
     );
   });
 
-  test('Play INFO when Families / audience cannot be determined', () async {
+  test('Play MANUAL REVIEW when Families / audience cannot be determined',
+      () async {
     final project = await _baseProject(tempRoot, 'play_families');
     final report = await ReleaseDoctor().check(project);
     final f = report.findings.singleWhere(
       (x) => x.id == 'play-families-audience-unknown',
     );
-    expect(f.level, FindingLevel.info);
+    expect(f.level, FindingLevel.manualReview);
     expect(f.detail.toLowerCase(), contains('cannot be determined'));
+    expect(f.guidelineReference, contains('Families'));
   });
 
   test('Apple WARNING when iOS privacy keys lack privacy_policy_url', () async {
@@ -153,7 +158,8 @@ dependencies:
       (x) => x.id == 'apple-privacy-policy-missing',
     );
     expect(f.level, FindingLevel.warning);
-    expect(f.detail, contains('5.1.1'));
+    expect(f.guidelineReference, contains('5.1'));
+    expect(f.detail.toLowerCase(), contains('potential rejection risk'));
   });
 
   test('Apple WARNING when account_required without deletion URL', () async {
@@ -217,7 +223,8 @@ Future<void> signInWithEmailAndPassword(String e, String p) async {}
           f.id == 'apple-sign-in-with-apple-review' &&
           f.level == FindingLevel.info,
     );
-    expect(info.detail.toLowerCase(), contains('evidence limitations'));
+    expect(info.detail.toLowerCase(), contains('first-party'));
+    expect(info.guidelineReference, contains('4.8'));
   });
 
   test('Apple WARNING when ads present but uses_tracking undeclared', () async {
@@ -327,7 +334,8 @@ store_compliance:
       (x) => x.id == 'apple-ugc-moderation-review',
     );
     expect(f.level, FindingLevel.manualReview);
-    expect(f.detail, contains('1.2'));
+    expect(f.guidelineReference, contains('1.2'));
+    expect(f.detail.toLowerCase(), contains('manual'));
   });
 
   test('privacy_policy_url suppresses Play and Apple privacy missing',

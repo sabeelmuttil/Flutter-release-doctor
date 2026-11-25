@@ -16,7 +16,45 @@ Local release-readiness checks for Flutter Android and iOS applications.
 - Deep link and push notification readiness
 - CI/CD release pipeline readiness
 - Project-level configuration and finding suppression
+- Optional live Google Play / App Store Connect verification (`--online`)
 - Terminal, Markdown, and JSON reports
+
+## Install and Google login
+
+```bash
+# From this repo (or after activating the package)
+dart pub global activate --source path .
+# or: dart pub get && dart run bin/flutter_release_doctor.dart …
+
+# One-time Google Play login (Desktop OAuth client JSON stays outside git)
+flutter_release_doctor connect google \
+  --oauth-client-file /secure/path/client_secret_xxx.json
+
+# Confirm / sign out
+flutter_release_doctor auth status
+flutter_release_doctor auth logout google
+
+# Offline checks (default — no login required)
+flutter_release_doctor check /path/to/flutter-project
+
+# Optional live Google Play verification after connect
+flutter_release_doctor check /path/to/flutter-project --online --store google
+```
+
+**Real Google OAuth client IDs and client secrets must stay outside this repository.** Create a Desktop OAuth client in Google Cloud Console, download the JSON, and keep that file out of git (and out of CI logs). `connect google` completes OAuth with **PKCE + state** and stores tokens in **OS secure storage** (macOS Keychain, Windows Credential Manager, Linux Secret Service). Local dirs under `~/.flutter_release_doctor/` are created automatically. User tokens are never written to your Flutter project, `.release-doctor.yaml`, or reports. Service-account private keys are rejected for the Desktop OAuth connect flow.
+
+Credential sources (first match wins):
+
+1. `--oauth-client-file /secure/path/client_secret_xxx.json`
+2. `FLUTTER_RELEASE_DOCTOR_GOOGLE_OAUTH_CLIENT_FILE`
+3. `GOOGLE_OAUTH_CLIENT_ID` (+ optional `GOOGLE_OAUTH_CLIENT_SECRET` for Desktop installed apps)
+
+```bash
+# Headless / SSH: print the authorization URL instead of opening a browser
+flutter_release_doctor connect google \
+  --oauth-client-file /secure/path/client_secret_xxx.json \
+  --no-browser
+```
 
 ## Run from source
 
@@ -26,6 +64,7 @@ dart run bin/flutter_release_doctor.dart check /path/to/flutter-project
 
 Defaults (unchanged):
 
+- offline only (no network, no login required)
 - readable console output
 - writes `release-doctor-report.md` into the scanned project
 - exit code `1` when any ERROR finding exists
@@ -108,7 +147,12 @@ dart run bin/flutter_release_doctor.dart check [project-path] [options]
 | `--output` | file path | _(none)_ | write the selected format to a file |
 | `--fail-on` | `error`, `warning`, `never` | `error` | CI exit policy |
 | `--no-markdown-report` | flag | off | skip creating `release-doctor-report.md` |
+| `--online` | flag | off | enable optional live Google Play / App Store Connect checks |
+| `--store` | `google`, `apple`, `both` | `both` | live store target (only used with `--online`) |
+| `--no-store-check` | flag | off | skip live store verification even when `--online` is set |
 | `-h`, `--help` | flag | | show usage |
+
+Offline is the default: **no network calls** unless `--online` is passed. Credentials are never read from source files or `.release-doctor.yaml`.
 
 ### Examples
 
@@ -215,6 +259,7 @@ store_compliance:
 | `payment_flows` | Optional declarations: `external_gateway`, `cash_on_delivery`, `offline_payment`, `no_in_app_payment`. |
 | `store_compliance` | Optional Play/App Store guideline *risk* declarations (privacy URL, account deletion, tracking, UGC, reviewer access). |
 | `store_profile` | Product policy profile used to suppress irrelevant findings (business model, auth style, location/tracking/UGC/Universal Links). |
+| `store_integrations` | Optional package/bundle IDs for live API checks (`google_play.package_name`, `app_store.bundle_id`). Credentials stay in env/CI secrets. |
 
 ### Transaction / billing safety (offline)
 
@@ -252,23 +297,45 @@ transaction_type: subscription
 
 ### Store guideline risk (offline)
 
-Release Doctor emits **risk signals** for Google Play and Apple App Store policies. It is **not** a guaranteed-compliance checker and never claims Data Safety or App Privacy declarations are complete. Every store finding names the relevant guideline/policy area.
+Release Doctor is an offline **store-guideline risk scanner**, not a store approval certificate. It never claims guaranteed approval or guaranteed rejection. Findings use wording such as **potential rejection risk** and **manual review required**.
 
-Each finding includes:
-- `confidence`: `high` | `medium` | `low`
-- `source`: `static-analysis` | `project-config` | `manual-review`
-- optional `guideline` (e.g. Google Play User Data / Data Safety, Apple App Review 5.1.1 / 3.1 / 4.8)
-- optional `evidenceSummary`
+Offline Google Play and Apple App Review checks use a versioned rule registry (`guidelineVersion`, currently `2026.1`). They do **not** require Google Play API or App Store Connect credentials or network access. Live store APIs remain optional behind `--online` and are reported separately (`source: live-api`).
 
-**MANUAL REVIEW** items and low-confidence findings do **not** reduce the release score or fail `--fail-on warning`.
+Each guideline finding includes:
+- `id`, `platform` (`google-play` / `app-store`)
+- `guidelineReference`, `ruleVersion`
+- `confidence`, `source`
+- `evidence` (plus `file` / `line` when available)
+- `fix`
+
+Reports include `guidelineVersion` in JSON and Markdown, a **MANUAL REVIEW** section for rules static analysis cannot prove, and this disclaimer:
+
+> Flutter Release Doctor is an offline store-guideline *risk scanner*. Findings indicate potential rejection risk and require manual review. They are not a store approval certificate…
+
+**MANUAL REVIEW** items and low-confidence findings do **not** reduce the release score or fail `--fail-on warning`. High-risk security findings (`hard-coded-secret`, `insecure-http`, `android-release-signing`, …) remain non-suppressible.
 
 `store_profile` avoids irrelevant checks (example: physical goods skip IAP/Play Billing requirements; phone OTP/email-only skip Sign in with Apple warnings; `uses_universal_links: false` / `uses_android_app_links: false` downgrade inferred deep-link warnings; `ci_required: false` makes missing CI informational).
 
-Reports include this disclaimer (console, Markdown, and JSON `disclaimer` field):
+When live store findings are present, reports also state that **live API data is informational and not a store approval guarantee**.
 
-> Automated checks identify risk signals; store approval and legal compliance require human review.
+Notable finding IDs: `play-data-safety-review`, `play-privacy-policy-missing`, `play-account-deletion-missing`, `play-sensitive-permissions-review`, `play-families-audience-unknown`, `play-insecure-networking-risk`, `play-signing-release-readiness`, `play-reviewer-access-missing`, `apple-privacy-policy-missing`, `apple-account-deletion-missing`, `apple-sign-in-with-apple-review`, `apple-att-review`, `apple-privacy-manifest-review`, `apple-permission-purpose-strings`, `apple-universal-links-entitlements`, `apple-reviewer-access-missing`.
 
-Notable finding IDs: `play-data-safety-review`, `play-privacy-policy-missing`, `apple-privacy-policy-missing`, `apple-account-deletion-missing`, `apple-sign-in-with-apple-review`, `apple-att-review`, `apple-reviewer-access-missing`.
+### Live store verification (optional, `--online`)
+
+Offline static checks remain the default. With `--online`, Release Doctor can query Google Play Developer API and/or App Store Connect.
+
+**Google Play (recommended for local use):**
+
+1. `flutter_release_doctor connect google --oauth-client-file /secure/path/client_secret_xxx.json` (browser OAuth; credentials outside the repo; OS secure storage)
+2. `flutter_release_doctor check . --online --store google`
+
+CI / automation may still set `GOOGLE_PLAY_ACCESS_TOKEN` or a service-account file via `GOOGLE_PLAY_SERVICE_ACCOUNT_FILE` / `GOOGLE_APPLICATION_CREDENTIALS`. Do not commit OAuth Desktop client JSON or service-account keys.
+
+**App Store Connect:** env secrets only — `APP_STORE_CONNECT_ACCESS_TOKEN`, or `APP_STORE_CONNECT_ISSUER_ID` + `APP_STORE_CONNECT_KEY_ID` + `APP_STORE_CONNECT_PRIVATE_KEY_PATH` (or `APP_STORE_CONNECT_PRIVATE_KEY`).
+
+Missing credentials → INFO / manual review (score unchanged). Auth failures → WARNING with redacted error text (tokens, JWTs, private keys, and service-account JSON are never printed). If the signed-in Google account lacks Play Console access, `connect google` shows a clear permission error.
+
+Live finding IDs: `store-api-access`, `google-play-release-status`, `google-play-vitals-summary`, `app-store-connect-access`, `testflight-build-status` (`source: live-api`).
 
 Each finding has a stable ID shown in terminal and Markdown output, for example:
 

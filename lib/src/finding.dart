@@ -1,3 +1,16 @@
+/// Store platform for offline guideline findings.
+enum GuidelinePlatform {
+  googlePlay,
+  appStore,
+  both;
+
+  String get reportLabel => switch (this) {
+        GuidelinePlatform.googlePlay => 'google-play',
+        GuidelinePlatform.appStore => 'app-store',
+        GuidelinePlatform.both => 'both',
+      };
+}
+
 enum FindingLevel {
   error,
   warning,
@@ -24,7 +37,7 @@ enum FindingLevel {
 
 enum FindingConfidence { high, medium, low }
 
-enum FindingSource { staticAnalysis, projectConfig, manualReview }
+enum FindingSource { staticAnalysis, projectConfig, manualReview, liveApi }
 
 class Finding {
   const Finding(
@@ -39,9 +52,12 @@ class Finding {
     this.classification,
     this.confidence = FindingConfidence.medium,
     this.source = FindingSource.staticAnalysis,
-    this.guideline,
+    this.platform,
+    this.guidelineReference,
+    this.ruleVersion,
+    @Deprecated('Use guidelineReference') String? guideline,
     this.evidenceSummary,
-  });
+  }) : _legacyGuideline = guideline;
 
   /// Stable machine-readable finding identifier (kebab-case).
   final String id;
@@ -68,11 +84,25 @@ class Finding {
   /// Where the signal came from.
   final FindingSource source;
 
-  /// Store/policy guideline area, or null when not applicable.
-  final String? guideline;
+  /// Store platform this guideline finding applies to, when applicable.
+  final GuidelinePlatform? platform;
+
+  /// Store/policy guideline reference (e.g. Apple App Review 5.1).
+  final String? guidelineReference;
+
+  /// Offline guideline rule registry version that produced this finding.
+  final String? ruleVersion;
+
+  final String? _legacyGuideline;
 
   /// Short safe evidence summary (never secrets or tokens).
   final String? evidenceSummary;
+
+  /// Alias for [guidelineReference] (backward compatible).
+  String? get guideline => guidelineReference ?? _legacyGuideline;
+
+  /// Alias preferred in reports/JSON as `evidence`.
+  String? get evidence => evidenceSummary;
 
   bool get affectsScore {
     if (level == FindingLevel.manualReview ||
@@ -100,6 +130,9 @@ class Finding {
     String? classification,
     FindingConfidence? confidence,
     FindingSource? source,
+    GuidelinePlatform? platform,
+    String? guidelineReference,
+    String? ruleVersion,
     String? guideline,
     String? evidenceSummary,
   }) {
@@ -115,7 +148,12 @@ class Finding {
       classification: classification ?? this.classification,
       confidence: confidence ?? this.confidence,
       source: source ?? this.source,
-      guideline: guideline ?? this.guideline,
+      platform: platform ?? this.platform,
+      guidelineReference: guidelineReference ??
+          guideline ??
+          this.guidelineReference ??
+          this.guideline,
+      ruleVersion: ruleVersion ?? this.ruleVersion,
       evidenceSummary: evidenceSummary ?? this.evidenceSummary,
     );
   }
@@ -143,8 +181,13 @@ class Finding {
           FindingSource.staticAnalysis => 'static-analysis',
           FindingSource.projectConfig => 'project-config',
           FindingSource.manualReview => 'manual-review',
+          FindingSource.liveApi => 'live-api',
         },
+        'platform': platform?.reportLabel,
+        'guidelineReference': guideline,
         'guideline': guideline,
+        'ruleVersion': ruleVersion,
+        'evidence': evidenceSummary,
         'evidenceSummary': evidenceSummary,
       };
 }
@@ -156,4 +199,5 @@ const nonSuppressibleFindingIds = <String>{
   'ci-hard-coded-secret',
   'insecure-http',
   'android-release-signing',
+  'play-insecure-networking-risk',
 };

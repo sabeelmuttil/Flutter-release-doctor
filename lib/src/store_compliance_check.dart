@@ -3,11 +3,12 @@ import 'dart:io';
 import 'package:flutter_release_doctor/src/doctor_config.dart';
 import 'package:flutter_release_doctor/src/evidence.dart';
 import 'package:flutter_release_doctor/src/finding.dart';
+import 'package:flutter_release_doctor/src/guidelines/guideline_registry.dart';
 
 /// Offline Google Play / App Store *guideline risk* scanner.
 ///
-/// Identifies risk signals only. Never claims Data Safety, App Privacy, or
-/// legal compliance is complete. Never makes network calls.
+/// Uses the versioned [GuidelineRuleRegistry]. Never calls Google Play or
+/// App Store Connect APIs. Never claims guaranteed approval or rejection.
 class StoreComplianceCheck {
   StoreComplianceCheck({
     required this.storeCompliance,
@@ -19,8 +20,8 @@ class StoreComplianceCheck {
   final TransactionType transactionType;
   final StoreProfile storeProfile;
 
-  static const disclaimer =
-      'Automated checks identify risk signals; store approval and legal compliance require human review.';
+  static const disclaimer = GuidelineRuleRegistry.disclaimer;
+  static const guidelineVersion = GuidelineRuleRegistry.guidelineVersion;
 
   static final _sensitiveAndroidPermission = RegExp(
     r'android\.permission\.(CAMERA|RECORD_AUDIO|ACCESS_FINE_LOCATION|'
@@ -128,11 +129,14 @@ class StoreComplianceCheck {
 
   Future<void> run(Directory project, List<Finding> findings) async {
     findings.add(
-      const Finding(
+      Finding(
         FindingLevel.info,
         'Store guideline risk disclaimer',
         disclaimer,
         id: 'store-guideline-risk-disclaimer',
+        ruleVersion: guidelineVersion,
+        platform: GuidelinePlatform.both,
+        evidenceSummary: 'Offline guideline registry $guidelineVersion',
       ),
     );
 
@@ -148,21 +152,33 @@ class StoreComplianceCheck {
 
     if (s.hasSensitiveAndroidPermissions && !cfg.hasPrivacyPolicyUrl) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.playPrivacyPolicy.finding(
           FindingLevel.warning,
-          'Play privacy policy',
           'Sensitive Android permissions were detected but `privacy_policy_url` is not configured. '
-              'Google Play User Data / privacy policy expectations require a publicly accessible policy URL when personal/sensitive data is collected (risk signal; not a compliance verdict). Needs verification.',
-          id: 'play-privacy-policy-missing',
+          'Potential rejection risk if personal/sensitive data is collected without a public privacy policy.',
           file: s.androidManifestFile,
           line: s.androidManifestLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          guideline: 'Google Play User Data / Data Safety',
-          evidenceSummary:
+          evidence:
               'Sensitive Android permission(s) without configured privacy_policy_url',
           fix:
               'Set store_compliance.privacy_policy_url in `.release-doctor.yaml` and host a real privacy policy.',
+        ),
+      );
+    }
+
+    if (s.hasSensitiveAndroidPermissions) {
+      findings.add(
+        GuidelineRuleRegistry.playSensitivePermissions.finding(
+          FindingLevel.manualReview,
+          'Sensitive Android permissions / APIs were detected. Confirm each permission is justified and accurately declared in Play Data Safety. '
+          'Static analysis cannot prove declaration completeness.',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          file: s.androidManifestFile,
+          line: s.androidManifestLine,
+          evidence: 'Sensitive Android permission declaration(s)',
+          fix:
+              'Review Play Console Data Safety and remove unused sensitive permissions.',
         ),
       );
     }
@@ -175,19 +191,15 @@ class StoreComplianceCheck {
         s.hasCamera ||
         s.hasContacts) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.playDataSafety.finding(
           FindingLevel.manualReview,
-          'Play Data Safety review',
           'Permissions, analytics, Firebase, location, camera, contacts, and/or advertising SDKs were detected. '
-              'Play Console Data Safety declarations must be reviewed manually — this tool never claims Data Safety forms are complete.',
-          id: 'play-data-safety-review',
-          file: s.dataSafetyEvidenceFile,
-          line: s.dataSafetyEvidenceLine,
+          'Play Console Data Safety declarations require manual review — this tool never claims Data Safety forms are complete.',
           confidence: FindingConfidence.low,
           source: FindingSource.manualReview,
-          guideline: 'Google Play User Data / Data Safety',
-          evidenceSummary:
-              'Data-collection related SDK/permission signals present',
+          file: s.dataSafetyEvidenceFile,
+          line: s.dataSafetyEvidenceLine,
+          evidence: 'Data-collection related SDK/permission signals present',
           fix:
               'Reconcile collected data types, sharing, and purposes in Play Console Data Safety against actual SDK/permission usage.',
         ),
@@ -198,15 +210,11 @@ class StoreComplianceCheck {
         cfg.accountRequired == true || storeProfile.hasUserAccounts == true;
     if (accountRequired && !cfg.hasAccountDeletionUrl) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.playAccountDeletion.finding(
           FindingLevel.warning,
-          'Play account deletion',
           '`account_required` / has_user_accounts is true but `account_deletion_url` is not configured. '
-              'Google Play account deletion policy expects an in-app and/or web deletion path when accounts are created (risk signal). Needs verification.',
-          id: 'play-account-deletion-missing',
-          confidence: FindingConfidence.medium,
+          'Potential rejection risk under Google Play account deletion expectations.',
           source: FindingSource.projectConfig,
-          guideline: 'Google Play Account Deletion',
           fix:
               'Provide store_compliance.account_deletion_url and implement account deletion.',
         ),
@@ -221,17 +229,13 @@ class StoreComplianceCheck {
             transactionType == TransactionType.subscription);
     if (isDigital && s.hasExternalPayment && !s.hasBilling) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.playBillingBypass.finding(
           FindingLevel.warning,
-          'Play Billing bypass risk',
           'Digital goods/subscription profile and an external payment flow appear present without detectable Google Play Billing / in_app_purchase. '
-              'Google Play Payments policy generally requires Play Billing for digital goods (risk signal; human policy review required). Needs verification.',
-          id: 'play-billing-bypass-risk',
+          'Potential rejection risk under Google Play Payments policy for digital goods.',
           file: s.externalPaymentFile,
           line: s.externalPaymentLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          evidenceSummary: 'External payment without Play Billing dependency',
+          evidence: 'External payment without Play Billing dependency',
           fix:
               'Use Google Play Billing for digital goods/subscriptions, or confirm an allowed exception with counsel.',
         ),
@@ -240,11 +244,10 @@ class StoreComplianceCheck {
 
     if (isPhysical) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.playPhysicalGoods.finding(
           FindingLevel.passed,
-          'Play physical goods payments',
-          'business_model/transaction_type is physical_goods. Google Play Payments policy generally permits external payment methods for physical goods and offline services; Play Billing is not required for those cases (risk framing only).',
-          id: 'play-physical-goods-payments-allowed',
+          'business_model/transaction_type is physical_goods. Google Play Payments policy generally permits external payment methods for physical goods and offline services; Play Billing is not required for those cases. '
+          'This is risk framing only — not a store approval certificate.',
           confidence: FindingConfidence.high,
           source: FindingSource.projectConfig,
         ),
@@ -252,15 +255,73 @@ class StoreComplianceCheck {
     }
 
     findings.add(
-      const Finding(
-        FindingLevel.info,
-        'Play Families / target audience',
-        'Target audience and Families / Designed for Families compliance cannot be determined from static analysis. Do not guess age ratings or Families requirements — review Play Console target audience settings manually.',
-        id: 'play-families-audience-unknown',
+      GuidelineRuleRegistry.playFamilies.finding(
+        FindingLevel.manualReview,
+        'Target audience and Families / Designed for Families compliance cannot be determined from static analysis. '
+        'Do not guess age ratings — review Play Console target audience settings manually.',
         confidence: FindingConfidence.low,
         source: FindingSource.manualReview,
+        evidence: 'Static analysis cannot prove Families / target audience',
+        fix:
+            'Confirm target audience and Families policy requirements in Play Console before release.',
       ),
     );
+
+    if (s.hasInsecureHttp) {
+      findings.add(
+        GuidelineRuleRegistry.playInsecureNetworking.finding(
+          FindingLevel.warning,
+          'Non-local HTTP endpoints were detected. Potential rejection risk and user-data exposure under Play network security expectations.',
+          confidence: FindingConfidence.high,
+          file: s.insecureHttpFile,
+          line: s.insecureHttpLine,
+          evidence: 'Non-local http:// endpoint in project sources',
+          fix: 'Use HTTPS for production endpoints; avoid cleartext traffic.',
+        ),
+      );
+    }
+
+    if (s.androidReleaseSigningMissing) {
+      findings.add(
+        GuidelineRuleRegistry.playSigningReadiness.finding(
+          FindingLevel.warning,
+          'Android release signingConfig / key.properties could not be confirmed. '
+          'Potential rejection risk or blocked Play upload if release builds are unsigned.',
+          confidence: FindingConfidence.medium,
+          file: s.signingEvidenceFile,
+          line: s.signingEvidenceLine,
+          evidence: 'Release signingConfig not resolved',
+          fix:
+              'Configure a release signingConfig (typically via key.properties) for store builds.',
+        ),
+      );
+    } else if (s.androidHasReleaseGradle) {
+      findings.add(
+        GuidelineRuleRegistry.playSigningReadiness.finding(
+          FindingLevel.manualReview,
+          'Release Gradle configuration was found. Confirm Play App Signing and keystore handling manually — static analysis cannot prove store upload readiness.',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          file: s.signingEvidenceFile,
+          evidence: 'Android release build configuration present',
+        ),
+      );
+    }
+
+    if (accountRequired &&
+        cfg.demoAccountProvided == false &&
+        storeProfile.reviewerDemoAccount != true) {
+      findings.add(
+        GuidelineRuleRegistry.playReviewerAccess.finding(
+          FindingLevel.warning,
+          'Accounts appear required and reviewer demo access is not confirmed. '
+          'Potential rejection risk if Play reviewers cannot access gated features.',
+          source: FindingSource.projectConfig,
+          fix:
+              'Provide reviewer instructions / demo credentials in Play Console and set demo_account_provided / reviewer_demo_account when ready.',
+        ),
+      );
+    }
   }
 
   void _analyzeApple(_Signals s, List<Finding> findings) {
@@ -268,19 +329,13 @@ class StoreComplianceCheck {
 
     if (s.hasIosPrivacyDescriptions && !cfg.hasPrivacyPolicyUrl) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.applePrivacyPolicy.finding(
           FindingLevel.warning,
-          'App Store privacy policy',
           'Sensitive iOS usage descriptions were detected but `privacy_policy_url` is not configured. '
-              'App Store Review Guideline 5.1.1 (Data Collection and Storage) expects a privacy policy when personal data is collected (risk signal). Needs verification.',
-          id: 'apple-privacy-policy-missing',
+          'Potential rejection risk under App Review 5.1 privacy expectations when personal data is collected.',
           file: s.infoPlistFile,
           line: s.infoPlistLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          guideline: 'Apple App Review 5.1.1',
-          evidenceSummary:
-              'iOS usage description(s) without privacy_policy_url',
+          evidence: 'iOS usage description(s) without privacy_policy_url',
           fix:
               'Set store_compliance.privacy_policy_url and ensure App Privacy / privacy policy links are accurate.',
         ),
@@ -291,15 +346,11 @@ class StoreComplianceCheck {
         cfg.accountRequired == true || storeProfile.hasUserAccounts == true;
     if (accountRequired && !cfg.hasAccountDeletionUrl) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.appleAccountDeletion.finding(
           FindingLevel.warning,
-          'App Store account deletion',
           '`account_required` / has_user_accounts is true but `account_deletion_url` is not configured. '
-              'App Store Review Guideline 5.1.1(v) expects account deletion when account creation is offered (risk signal). Needs verification.',
-          id: 'apple-account-deletion-missing',
-          confidence: FindingConfidence.medium,
+          'Potential rejection risk under App Review 5.1.1(v) account deletion.',
           source: FindingSource.projectConfig,
-          guideline: 'Apple App Review 5.1.1',
           fix:
               'Provide store_compliance.account_deletion_url and an in-app deletion flow.',
         ),
@@ -313,38 +364,28 @@ class StoreComplianceCheck {
         storeProfile.authentication != StoreAuthentication.emailPassword &&
         storeProfile.authentication != StoreAuthentication.phoneOtp) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.appleSignInWithApple.finding(
           FindingLevel.warning,
-          'Sign in with Apple',
           'Third-party/social sign-in appears present, but Sign in with Apple configuration was not detected. '
-              'App Store Review Guideline 4.8 (Sign in with Apple) may apply when other third-party/social logins are offered (risk signal; verify entitlement and UX manually). Needs verification.',
-          id: 'apple-sign-in-with-apple-review',
+          'Potential rejection risk under App Review 4.8 Login Services.',
           file: s.socialLoginFile,
           line: s.socialLoginLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          guideline: 'Apple App Review 4.8 Login Services',
-          evidenceSummary:
-              'Social login dependency/usage without Sign in with Apple',
+          evidence: 'Social login dependency/usage without Sign in with Apple',
           fix:
               'Add Sign in with Apple if Guideline 4.8 applies, or document why an exception applies.',
         ),
       );
     } else if (s.hasOwnAuthOnly || firstPartyAuth) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.appleSignInWithApple.finding(
           FindingLevel.info,
-          'Sign in with Apple',
           'Only first-party email/password/phone login signals were detected (or store_profile.authentication declares first-party login). '
-              'Sign in with Apple is typically not required for that pattern, but static analysis has evidence limitations and may miss custom OAuth.',
-          id: 'apple-sign-in-with-apple-review',
-          file: s.ownAuthFile,
-          line: s.ownAuthLine,
+          'Sign in with Apple is typically not required for that pattern, but static analysis may miss custom OAuth.',
           confidence: FindingConfidence.low,
           source: FindingSource.projectConfig,
-          guideline: 'Apple App Review 4.8 Login Services',
-          evidenceSummary:
-              'First-party auth profile or email/phone login signals',
+          file: s.ownAuthFile,
+          line: s.ownAuthLine,
+          evidence: 'First-party auth profile or email/phone login signals',
         ),
       );
     }
@@ -355,19 +396,13 @@ class StoreComplianceCheck {
         cfg.usesTracking == true || storeProfile.usesTracking == true;
     if ((s.hasAds || s.hasAdSupport || s.hasAttSignals) && !trackingDeclared) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.appleAtt.finding(
           FindingLevel.warning,
-          'App tracking declaration',
-          'Advertising/tracking SDKs or AdSupport-related signals were detected, but `uses_tracking` is not explicitly declared in `.release-doctor.yaml`. '
-              'App Privacy / tracking disclosures and ATT require human review (risk signal). Needs verification.',
-          id: 'apple-att-review',
+          'Advertising/tracking SDKs or AdSupport-related signals were detected, but `uses_tracking` is not explicitly declared. '
+          'Potential rejection risk for App Privacy / ATT disclosures.',
           file: s.trackingEvidenceFile,
           line: s.trackingEvidenceLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          guideline: 'Apple App Review 5.1.1',
-          evidenceSummary:
-              'Ads/tracking signals without uses_tracking declaration',
+          evidence: 'Ads/tracking signals without uses_tracking declaration',
           fix:
               'Set store_compliance.uses_tracking or store_profile.uses_tracking after reviewing App Privacy and ATT requirements.',
         ),
@@ -376,18 +411,14 @@ class StoreComplianceCheck {
 
     if (usesTracking && !s.hasAttUsageDescription) {
       findings.add(
-        Finding(
+        GuidelineRuleRegistry.appleAtt.finding(
           FindingLevel.warning,
-          'App Tracking Transparency',
           '`uses_tracking` is true but NSUserTrackingUsageDescription / ATT request handling was not detected. '
-              'Guideline 5.1.2 (Privacy - Data Use and Sharing) expects ATT when tracking users (risk signal). Needs verification.',
-          id: 'apple-att-review',
+          'Potential rejection risk under App Review 5.1.2 tracking rules.',
+          source: FindingSource.projectConfig,
           file: s.infoPlistFile,
           line: s.infoPlistLine,
-          confidence: FindingConfidence.medium,
-          source: FindingSource.projectConfig,
-          guideline: 'Apple App Review 5.1.1',
-          evidenceSummary: 'uses_tracking=true without ATT usage description',
+          evidence: 'uses_tracking=true without ATT usage description',
           fix:
               'Add NSUserTrackingUsageDescription and request authorization before tracking.',
         ),
@@ -402,15 +433,10 @@ class StoreComplianceCheck {
             transactionType == TransactionType.subscription);
     if (isDigital && !s.hasBilling) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.appleIap.finding(
           FindingLevel.warning,
-          'App Store In-App Purchase',
           'Digital goods/subscription profile but Apple In-App Purchase / in_app_purchase support was not detected. '
-              'Guideline 3.1.1 (In-App Purchase) generally requires IAP for digital goods (risk signal). Needs verification.',
-          id: 'apple-iap-missing',
-          confidence: FindingConfidence.medium,
-          source: FindingSource.staticAnalysis,
-          guideline: 'Apple App Review 3.1 Payments',
+          'Potential rejection risk under App Review 3.1 Payments.',
           fix:
               'Integrate StoreKit / in_app_purchase for digital content, or confirm an allowed Reader/multiplatform exception.',
         ),
@@ -419,14 +445,12 @@ class StoreComplianceCheck {
 
     if (isPhysical) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.applePhysicalGoods.finding(
           FindingLevel.passed,
-          'App Store physical goods payments',
-          'business_model/transaction_type is physical_goods. Guideline 3.1.5(a) generally allows external payment methods for goods/services consumed outside the app (risk framing only; not a compliance certificate).',
-          id: 'apple-physical-goods-payments-allowed',
+          'business_model/transaction_type is physical_goods. Guideline 3.1.5(a) generally allows external payment methods for goods/services consumed outside the app. '
+          'This is risk framing only — not a store approval certificate.',
           confidence: FindingConfidence.high,
           source: FindingSource.projectConfig,
-          guideline: 'Apple App Review 3.1 Payments',
         ),
       );
     }
@@ -437,13 +461,10 @@ class StoreComplianceCheck {
                 storeProfile.reviewerDemoAccount == false);
     if (demoMissing && storeProfile.reviewerDemoAccount != true) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.appleReviewerAccess.finding(
           FindingLevel.warning,
-          'App Review access',
           'Accounts appear required and reviewer demo account is not confirmed. '
-              'App Store Review Guideline 2.1 (App Completeness) expects demo credentials when login is required (risk signal). Needs verification.',
-          id: 'apple-reviewer-access-missing',
-          confidence: FindingConfidence.medium,
+          'Potential rejection risk under App Review 2.1 App Completeness.',
           source: FindingSource.projectConfig,
           fix:
               'Provide a demo account in App Store Connect review notes and set reviewer_demo_account / demo_account_provided: true when ready.',
@@ -455,15 +476,106 @@ class StoreComplianceCheck {
         storeProfile.hasUserGeneratedContent == true;
     if (ugc && storeProfile.hasUserGeneratedContent != false) {
       findings.add(
-        const Finding(
+        GuidelineRuleRegistry.appleUgc.finding(
           FindingLevel.manualReview,
-          'User-generated content',
-          '`user_generated_content` / has_user_generated_content is true. Guideline 1.2 (User-Generated Content) expects filtering, reporting, blocking, and contact mechanisms — these require manual product/legal review (risk signal; not auto-verified).',
-          id: 'apple-ugc-moderation-review',
+          '`user_generated_content` / has_user_generated_content is true. '
+          'Filtering, reporting, blocking, and contact mechanisms require manual product/legal review.',
           confidence: FindingConfidence.low,
           source: FindingSource.manualReview,
           fix:
               'Verify moderation, report/block flows, and published contact methods before submission.',
+        ),
+      );
+    }
+
+    if (s.hasIosPrivacyDescriptions && !s.hasAppPrivacyManifest) {
+      findings.add(
+        GuidelineRuleRegistry.applePrivacyManifest.finding(
+          FindingLevel.warning,
+          'Privacy-sensitive iOS usage was detected but an app-owned PrivacyInfo.xcprivacy was not found. '
+          'Potential rejection risk for privacy manifest / required-reason API declarations.',
+          file: s.infoPlistFile,
+          line: s.infoPlistLine,
+          evidence: 'Sensitive iOS usage without app PrivacyInfo.xcprivacy',
+          fix:
+              'Add ios/Runner/PrivacyInfo.xcprivacy covering required-reason APIs and tracked data.',
+        ),
+      );
+    } else if (s.hasIosPrivacyDescriptions && s.hasAppPrivacyManifest) {
+      findings.add(
+        GuidelineRuleRegistry.applePrivacyManifest.finding(
+          FindingLevel.manualReview,
+          'PrivacyInfo.xcprivacy was found. Confirm required-reason APIs and tracking declarations match real usage — static analysis cannot prove completeness.',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          file: s.privacyManifestFile,
+          evidence: 'App-owned PrivacyInfo.xcprivacy present',
+        ),
+      );
+    }
+
+    if (s.hasEmptyIosPurposeString) {
+      findings.add(
+        GuidelineRuleRegistry.applePermissionStrings.finding(
+          FindingLevel.warning,
+          'One or more iOS permission purpose strings appear empty or placeholder-like. '
+          'Potential rejection risk under App Review 5.1.1 permission purpose string rules.',
+          file: s.infoPlistFile,
+          line: s.emptyPurposeLine,
+          evidence: 'Empty or placeholder NS*UsageDescription value',
+          fix:
+              'Provide clear, user-facing purpose strings for each sensitive permission.',
+        ),
+      );
+    } else if (s.hasIosPrivacyDescriptions) {
+      findings.add(
+        GuidelineRuleRegistry.applePermissionStrings.finding(
+          FindingLevel.manualReview,
+          'iOS permission purpose strings were detected. Confirm wording accurately describes use — static analysis cannot prove App Review acceptability.',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          file: s.infoPlistFile,
+          line: s.infoPlistLine,
+          evidence: 'NS*UsageDescription keys present',
+        ),
+      );
+    }
+
+    if (storeProfile.usesUniversalLinks == true &&
+        !s.hasAssociatedDomainsApplinks) {
+      findings.add(
+        GuidelineRuleRegistry.appleUniversalLinks.finding(
+          FindingLevel.warning,
+          'store_profile.uses_universal_links=true but applinks associated domains were not detected in Runner entitlements. '
+          'Potential rejection risk or broken Universal Links configuration.',
+          file: s.entitlementsFile,
+          evidence:
+              'Profile expects Universal Links; entitlements missing applinks',
+          fix:
+              'Add com.apple.developer.associated-domains with applinks: entries in Runner entitlements.',
+        ),
+      );
+    } else if (s.hasAssociatedDomainsKey && !s.hasAssociatedDomainsApplinks) {
+      findings.add(
+        GuidelineRuleRegistry.appleUniversalLinks.finding(
+          FindingLevel.manualReview,
+          'associated-domains entitlement is present without clear applinks: entries. Manual review required for Universal Links setup.',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          file: s.entitlementsFile,
+          evidence: 'associated-domains key without applinks entries',
+        ),
+      );
+    } else if (storeProfile.usesUniversalLinks != false) {
+      findings.add(
+        GuidelineRuleRegistry.appleUniversalLinks.finding(
+          FindingLevel.manualReview,
+          'Universal Links / associated domains cannot be fully validated offline (AASA hosting and entitlement alignment require manual review).',
+          confidence: FindingConfidence.low,
+          source: FindingSource.manualReview,
+          evidence: 'Offline scan cannot prove Universal Links end-to-end',
+          fix:
+              'Verify applinks entitlements and apple-app-site-association hosting before release.',
         ),
       );
     }
@@ -631,6 +743,31 @@ class StoreComplianceCheck {
         signals.trackingEvidenceLine ??= Evidence.lineOfOffset(
             text, text.indexOf('NSUserTrackingUsageDescription'));
       }
+      final emptyPurpose = RegExp(
+        r'<key>\s*(NS\w+UsageDescription)\s*</key>\s*<string>\s*(TODO|TBD|changeme|xxx|test|\.{0,3})\s*</string>',
+        caseSensitive: false,
+      ).firstMatch(text);
+      final blankPurpose = RegExp(
+        r'<key>\s*(NS\w+UsageDescription)\s*</key>\s*<string>\s*</string>',
+        caseSensitive: false,
+      ).firstMatch(text);
+      final purposeHit = emptyPurpose ?? blankPurpose;
+      if (purposeHit != null) {
+        signals.hasEmptyIosPurposeString = true;
+        signals.emptyPurposeLine =
+            Evidence.lineOfOffset(text, purposeHit.start);
+      }
+    }
+
+    final privacyManifest = File(
+      '${project.path}${Platform.pathSeparator}ios'
+      '${Platform.pathSeparator}Runner'
+      '${Platform.pathSeparator}PrivacyInfo.xcprivacy',
+    );
+    if (await privacyManifest.exists()) {
+      signals.hasAppPrivacyManifest = true;
+      signals.privacyManifestFile =
+          Evidence.relativePath(project, privacyManifest);
     }
 
     final entitlements = <File>[
@@ -653,14 +790,32 @@ class StoreComplianceCheck {
     for (final file in entitlements) {
       if (!await file.exists()) continue;
       final text = await file.readAsString();
+      signals.entitlementsFile ??= Evidence.relativePath(project, file);
       if (_signInWithApple.hasMatch(text)) {
         signals.hasSignInWithApple = true;
-        break;
+      }
+      if (text.contains('com.apple.developer.associated-domains')) {
+        signals.hasAssociatedDomainsKey = true;
+      }
+      if (RegExp(r'applinks:', caseSensitive: false).hasMatch(text)) {
+        signals.hasAssociatedDomainsApplinks = true;
       }
     }
 
+    await _scanInsecureHttp(project, signals);
+    await _scanAndroidSigning(project, signals);
+
     final lib = Directory('${project.path}${Platform.pathSeparator}lib');
-    if (!await lib.exists()) return signals;
+    if (!await lib.exists()) {
+      signals.hasDataCollectionSignals = signals.hasAnalytics ||
+          signals.hasFirebase ||
+          signals.hasAds ||
+          signals.hasLocation ||
+          signals.hasCamera ||
+          signals.hasContacts ||
+          signals.hasSensitiveAndroidPermissions;
+      return signals;
+    }
 
     await for (final entity in lib.list(recursive: true, followLinks: false)) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
@@ -715,6 +870,82 @@ class StoreComplianceCheck {
 
     return signals;
   }
+
+  Future<void> _scanInsecureHttp(Directory project, _Signals signals) async {
+    final httpPattern = RegExp('http://[^\\s\'"<>]+', caseSensitive: false);
+    final candidates = <File>[];
+    await for (final entity in project.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (entity is! File) continue;
+      final path = entity.path.replaceAll('\\', '/');
+      if (path.contains('/.git/') ||
+          path.contains('/build/') ||
+          path.contains('/.dart_tool/') ||
+          path.contains('/ios/Pods/')) {
+        continue;
+      }
+      if (path.endsWith('.dart') ||
+          path.endsWith('.env') ||
+          path.endsWith('.yaml') ||
+          path.endsWith('.yml') ||
+          path.endsWith('.json') ||
+          path.endsWith('.plist') ||
+          path.endsWith('.xml')) {
+        candidates.add(entity);
+      }
+    }
+
+    for (final file in candidates) {
+      final text = await file.readAsString();
+      for (final match in httpPattern.allMatches(text)) {
+        final url = match.group(0)!.toLowerCase();
+        if (url.contains('localhost') || url.contains('10.0.2.2')) continue;
+        if (url.contains('www.apple.com/dtds/') ||
+            url.contains('schemas.android.com/') ||
+            url.contains('www.w3.org/')) {
+          continue;
+        }
+        signals.hasInsecureHttp = true;
+        signals.insecureHttpFile = Evidence.relativePath(project, file);
+        signals.insecureHttpLine = Evidence.lineOfOffset(text, match.start);
+        return;
+      }
+    }
+  }
+
+  Future<void> _scanAndroidSigning(Directory project, _Signals signals) async {
+    final groovy = File(
+      '${project.path}${Platform.pathSeparator}android'
+      '${Platform.pathSeparator}app'
+      '${Platform.pathSeparator}build.gradle',
+    );
+    final kts = File('${groovy.path}.kts');
+    File? gradle;
+    if (await groovy.exists()) {
+      gradle = groovy;
+    } else if (await kts.exists()) {
+      gradle = kts;
+    }
+    if (gradle == null) return;
+
+    signals.androidHasReleaseGradle = true;
+    signals.signingEvidenceFile = Evidence.relativePath(project, gradle);
+    final text = await gradle.readAsString();
+    final hasSigningConfig = RegExp(
+      r'signingConfigs|storeFile|key\.properties',
+      caseSensitive: false,
+    ).hasMatch(text);
+    final hasRelease = RegExp(r'\brelease\s*\{').hasMatch(text);
+    if (hasRelease && !hasSigningConfig) {
+      signals.androidReleaseSigningMissing = true;
+      final m = RegExp(r'\brelease\s*\{').firstMatch(text);
+      if (m != null) {
+        signals.signingEvidenceLine = Evidence.lineOfOffset(text, m.start);
+      }
+    }
+  }
 }
 
 class _Signals {
@@ -725,6 +956,15 @@ class _Signals {
   bool hasIosPrivacyDescriptions = false;
   String? infoPlistFile;
   int? infoPlistLine;
+  bool hasEmptyIosPurposeString = false;
+  int? emptyPurposeLine;
+
+  bool hasAppPrivacyManifest = false;
+  String? privacyManifestFile;
+
+  bool hasAssociatedDomainsKey = false;
+  bool hasAssociatedDomainsApplinks = false;
+  String? entitlementsFile;
 
   bool hasAnalytics = false;
   bool hasFirebase = false;
@@ -755,4 +995,13 @@ class _Signals {
   bool hasExternalPayment = false;
   String? externalPaymentFile;
   int? externalPaymentLine;
+
+  bool hasInsecureHttp = false;
+  String? insecureHttpFile;
+  int? insecureHttpLine;
+
+  bool androidHasReleaseGradle = false;
+  bool androidReleaseSigningMissing = false;
+  String? signingEvidenceFile;
+  int? signingEvidenceLine;
 }

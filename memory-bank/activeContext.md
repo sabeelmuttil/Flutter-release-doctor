@@ -1,11 +1,11 @@
 # Active context
 
-Profile-aware deep-link / CI refinements:
+Offline store-guideline risk scanner (versioned registry `2026.1`):
 
-- `uses_universal_links: false` → no associated-domains WARNING from schemes/SDK noise; MANUAL REVIEW only when concrete `applinks:` exist
-- `uses_android_app_links: false` → App Links host/autoVerify → INFO
-- Payment/auth SDK unresolved URL schemes → MANUAL REVIEW with SDK source; empty/duplicate app schemes stay WARNING
-- `ci_required: false` → missing CI is INFO
-- Real warnings kept: key.properties, PrivacyInfo, secrets, insecure HTTP, signing
+- Google Play + Apple App Review rules offline — no Play/ASC API required
+- Findings include platform, guidelineReference, ruleVersion, evidence, fix
+- Reports expose `guidelineVersion`; MANUAL REVIEW section for unprovable rules
+- Wording: potential rejection risk / manual review required — not an approval certificate
+- Live store APIs remain optional behind `--online`
 
-Prior: finding confidence model + store_profile.
+Prior: Google OAuth `connect google` with bundled Desktop client + OS secure storage.
