@@ -1,11 +1,10 @@
 # Active context
 
-Physical-goods payment-flow detection expanded:
+Insecure HTTP scanner false positives fixed for Xcode/XML metadata:
 
-- Broader static evidence: gateway/WebView deps, payment/checkout symbols, API paths, COD terms
-- Optional `payment_flows` declarations (`external_gateway`, `cash_on_delivery`, `offline_payment`, `no_in_app_payment`)
-- PASS `external-payment-flow-detected` on static evidence; PASS `payment-flow-declared` / `cash-on-delivery-declared` for honest YAML declarations (not treated as security proof)
-- WARNING `external-payment-flow-not-detected` only when neither evidence nor declarations exist
-- Never requires Google Play Billing for physical goods
+- Skip `ios/**/*.xcworkspace/**`, `ios/Pods/**`, `build/**`, `.dart_tool/**`, `.git/**`
+- Ignore XML/plist DOCTYPE, xmlns, Apple DTD, and schema HTTP URLs
+- Still warn on real HTTP in Dart, `.env`, JSON/YAML, and plist string values
+- localhost / `10.0.2.2` unchanged
 
-Prior: transaction-type summary visibility; offline billing analyzer; Chicking refinements.
+Prior: Firebase client-config secret exclusions; physical-goods payment flows; transaction-type summary.

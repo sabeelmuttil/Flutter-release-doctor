@@ -351,8 +351,12 @@ class ReleaseDoctor {
       "http://[^\\s'\"<>]+",
       caseSensitive: false,
     );
+    // Keep detection for real secrets; Firebase client-config contexts are
+    // filtered separately (not a broad apiKey exception).
     final secretPattern = RegExp(
-      r'''(?:api[_-]?key|secret|password)\s*[=:]\s*["']?[A-Za-z0-9_-]{20,}''',
+      r'''(?:api[_-]?key|secret|password|private[_-]?key)\s*[=:]\s*["']?[A-Za-z0-9_/+=\-]{20,}'''
+      r'''|"type"\s*:\s*"service_account"'''
+      r'''|-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----''',
       caseSensitive: false,
     );
     final candidates = <File>[];
@@ -363,16 +367,17 @@ class ReleaseDoctor {
       if (entity is! File) continue;
       final path = entity.path;
       final normalized = path.replaceAll('\\', '/');
-      if (normalized.contains('/.git/') ||
-          normalized.contains('/build/') ||
-          normalized.contains('/.dart_tool/') ||
-          normalized.contains('/ios/Pods/')) {
+      final relative = Evidence.relativePath(project, entity);
+      if (_shouldSkipSecurityScanPath(relative, normalized)) {
         continue;
       }
       if (path.endsWith('.dart') ||
           path.endsWith('.env') ||
           path.endsWith('.yaml') ||
-          path.endsWith('.json')) {
+          path.endsWith('.yml') ||
+          path.endsWith('.json') ||
+          path.endsWith('.plist') ||
+          path.endsWith('.xml')) {
         candidates.add(entity);
       }
     }
@@ -382,9 +387,19 @@ class ReleaseDoctor {
     String? secretFile;
     int? secretLine;
     String? secretClass;
+    String? firebaseClientFile;
+    int? firebaseClientLine;
 
     for (final file in candidates) {
       final text = await file.readAsString();
+      final relative = Evidence.relativePath(project, file);
+
+      if (firebaseClientFile == null &&
+          _isKnownFirebaseClientConfigFile(relative, text)) {
+        firebaseClientFile = relative;
+        firebaseClientLine = _firebaseClientEvidenceLine(relative, text);
+      }
+
       if (httpFile == null) {
         for (final match in httpPattern.allMatches(text)) {
           final url = match.group(0)!;
@@ -392,22 +407,37 @@ class ReleaseDoctor {
           if (lower.contains('localhost') || lower.contains('10.0.2.2')) {
             continue;
           }
+          if (_isXmlOrPlistMetadataHttp(
+            relative,
+            text,
+            match.start,
+            url,
+          )) {
+            continue;
+          }
           final host = _hostOfUrl(url);
           if (host != null && approved.contains(host)) continue;
-          httpFile = Evidence.relativePath(project, file);
+          httpFile = relative;
           httpLine = Evidence.lineOfOffset(text, match.start);
           break;
         }
       }
       if (secretFile == null) {
-        final match = secretPattern.firstMatch(text);
-        if (match != null) {
-          secretFile = Evidence.relativePath(project, file);
+        for (final match in secretPattern.allMatches(text)) {
+          if (_isFirebaseClientConfigSecret(relative, text, match)) {
+            continue;
+          }
+          secretFile = relative;
           secretLine = Evidence.lineOfOffset(text, match.start);
           secretClass = Evidence.classifySecretMatch(match.group(0)!);
+          break;
         }
       }
-      if (httpFile != null && secretFile != null) break;
+      if (httpFile != null &&
+          secretFile != null &&
+          firebaseClientFile != null) {
+        break;
+      }
     }
 
     if (httpFile != null) {
@@ -438,6 +468,19 @@ class ReleaseDoctor {
         ),
       );
     }
+    if (firebaseClientFile != null) {
+      findings.add(
+        Finding(
+          FindingLevel.info,
+          'Firebase client configuration',
+          'Firebase client configuration was detected. Review Google Cloud API restrictions separately.',
+          id: 'firebase-client-config-detected',
+          file: firebaseClientFile,
+          line: firebaseClientLine,
+          classification: 'firebase-client-config',
+        ),
+      );
+    }
     if (httpFile == null && secretFile == null) {
       findings.add(
         const Finding(
@@ -448,6 +491,149 @@ class ReleaseDoctor {
         ),
       );
     }
+  }
+
+  /// Generated / metadata trees that must not be scanned for insecure HTTP.
+  bool _shouldSkipSecurityScanPath(String relativePath, String normalizedAbs) {
+    final relative = relativePath.replaceAll('\\', '/');
+    if (relative == '.git' ||
+        relative.startsWith('.git/') ||
+        normalizedAbs.contains('/.git/')) {
+      return true;
+    }
+    if (relative == 'build' ||
+        relative.startsWith('build/') ||
+        normalizedAbs.contains('/build/')) {
+      return true;
+    }
+    if (relative == '.dart_tool' ||
+        relative.startsWith('.dart_tool/') ||
+        normalizedAbs.contains('/.dart_tool/')) {
+      return true;
+    }
+    if (relative.startsWith('ios/Pods/') ||
+        relative == 'ios/Pods' ||
+        normalizedAbs.contains('/ios/Pods/')) {
+      return true;
+    }
+    // ios/**/*.xcworkspace/**
+    if (RegExp(r'(^|/)ios/.+\.xcworkspace(/|$)').hasMatch(relative) ||
+        RegExp(r'/ios/.+\.xcworkspace(/|$)').hasMatch(normalizedAbs)) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Ignore HTTP URLs that only appear as XML/plist metadata (DTD, xmlns, etc.).
+  bool _isXmlOrPlistMetadataHttp(
+    String relativePath,
+    String text,
+    int offset,
+    String url,
+  ) {
+    final lowerPath = relativePath.toLowerCase();
+    final isXmlLike =
+        lowerPath.endsWith('.plist') || lowerPath.endsWith('.xml');
+    if (!isXmlLike) return false;
+
+    final lowerUrl = url.toLowerCase();
+    if (lowerUrl.contains('www.apple.com/dtds/') ||
+        lowerUrl.contains('apple.com/dtds/') ||
+        lowerUrl.contains('schemas.android.com/') ||
+        lowerUrl.contains('www.w3.org/') ||
+        lowerUrl.contains('xmlns') ||
+        lowerUrl.contains('schemas.xmlsoap.org/')) {
+      return true;
+    }
+
+    final lineStart = offset == 0 ? 0 : text.lastIndexOf('\n', offset - 1) + 1;
+    final lineEnd = text.indexOf('\n', offset);
+    final line = text
+        .substring(lineStart, lineEnd < 0 ? text.length : lineEnd)
+        .trimLeft();
+    final lineLower = line.toLowerCase();
+
+    if (lineLower.startsWith('<?xml')) return true;
+    if (lineLower.startsWith('<!doctype')) return true;
+    if (RegExp(r'\bxmlns(?::[\w.-]+)?\s*=', caseSensitive: false)
+        .hasMatch(line)) {
+      return true;
+    }
+    if (lineLower.contains('public "-//apple//dtd')) return true;
+
+    return false;
+  }
+
+  /// Known FlutterFire / Firebase *client* config files only — not a global
+  /// apiKey exception.
+  bool _isKnownFirebaseClientConfigFile(String relativePath, String text) {
+    final base = relativePath.split('/').last;
+    if (base == 'google-services.json' || base == 'GoogleService-Info.plist') {
+      return true;
+    }
+    if (base == 'firebase_options.dart' && text.contains('FirebaseOptions(')) {
+      return true;
+    }
+    return false;
+  }
+
+  int? _firebaseClientEvidenceLine(String relativePath, String text) {
+    final base = relativePath.split('/').last;
+    if (base == 'firebase_options.dart') {
+      final match = RegExp(r'FirebaseOptions\s*\(').firstMatch(text);
+      if (match != null) return Evidence.lineOfOffset(text, match.start);
+    }
+    if (base == 'google-services.json') {
+      final match = RegExp(r'"project_info"|"client"', caseSensitive: false)
+          .firstMatch(text);
+      if (match != null) return Evidence.lineOfOffset(text, match.start);
+    }
+    if (base == 'GoogleService-Info.plist') {
+      final match =
+          RegExp(r'GOOGLE_APP_ID|GCM_SENDER_ID|API_KEY').firstMatch(text);
+      if (match != null) return Evidence.lineOfOffset(text, match.start);
+    }
+    return 1;
+  }
+
+  /// Exclude only Firebase client-config contexts from hard-coded-secret.
+  bool _isFirebaseClientConfigSecret(
+    String relativePath,
+    String text,
+    RegExpMatch match,
+  ) {
+    final base = relativePath.split('/').last;
+    if (base == 'google-services.json' || base == 'GoogleService-Info.plist') {
+      return true;
+    }
+    if (base != 'firebase_options.dart') return false;
+
+    final matched = match.group(0)!.toLowerCase();
+    final looksLikeApiKey = matched.contains('apikey') ||
+        matched.contains('api_key') ||
+        matched.contains('api-key');
+    if (!looksLikeApiKey) return false;
+    return _isInsideFirebaseOptionsCall(text, match.start);
+  }
+
+  bool _isInsideFirebaseOptionsCall(String text, int offset) {
+    final before = text.substring(0, offset);
+    final start = before.lastIndexOf('FirebaseOptions(');
+    if (start < 0) return false;
+
+    var depth = 0;
+    for (var i = start + 'FirebaseOptions'.length; i < offset; i++) {
+      final c = text.codeUnitAt(i);
+      if (c == 0x28) {
+        // (
+        depth++;
+      } else if (c == 0x29) {
+        // )
+        depth--;
+        if (depth == 0) return false;
+      }
+    }
+    return depth > 0;
   }
 
   String? _hostOfUrl(String url) {
